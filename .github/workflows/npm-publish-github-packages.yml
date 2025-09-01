@@ -1,0 +1,51 @@
+# 工作流名称
+name: Deploy to GitHub Pages
+
+# 触发条件：当代码被推送到 main 分支时
+on:
+  push:
+    branches: [ "main" ]
+
+# 权限设置：允许此工作流写入部署
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 任务
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 第一步：获取你的代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 第二步：安装 Node.js 环境
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 第三步：安装项目依赖
+      - name: Install dependencies
+        run: npm install
+
+      # 第四步：打包项目
+      - name: Build
+        run: npm run build
+
+      # 第五步：设置 GitHub Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      # 第六步：上传打包好的文件
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      # 第七步：部署到 GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
