@@ -2,18 +2,6 @@
 // 初始化基础组件
 // =================================================================
 const scene = new THREE.Scene();
-// --- 调试代码：添加一个会发光的测试立方体 ---
-const testGeometry = new THREE.BoxGeometry(15, 15, 15);
-const testMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true }); // 绿色线框，不需要光
-const testCube = new THREE.Mesh(testGeometry, testMaterial);
-testCube.position.set(0, 0, 0); // 放在场景中心
-scene.add(testCube);
-
-// 强制设置相机位置，确保能看到立方体
-camera.position.set(0, 20, 50);
-camera.lookAt(testCube.position); // 相机看向立方体
-console.log('测试立方体已添加到场景');
-// --- 调试代码结束 ---
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(-80, 25, 50);
 scene.add(camera);
