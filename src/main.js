@@ -533,7 +533,7 @@ function updateCamera() {
 // =================================================================
 const gltfLoader = new GLTFLoader();
 
-gltfLoader.load('/布局.glb', (gltf) => {
+gltfLoader.load('布局.glb', (gltf) => {
   layoutModel = gltf.scene;
   layoutModel.position.set(0, 0, 0);
   layoutModel.scale.set(3.5, 3.5, 3.5);
@@ -611,7 +611,7 @@ gltfLoader.load('/布局.glb', (gltf) => {
   if (kirbyModel) isReady = true;
 });
 
-gltfLoader.load('/kirby.glb', (gltf) => {
+gltfLoader.load('kirby.glb', (gltf) => {
   kirbyModel = gltf.scene;
   kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
   kirbyModel.rotation.y = 4.91;
@@ -637,7 +637,7 @@ gltfLoader.load('/kirby.glb', (gltf) => {
   if (layoutModel) isReady = true;
 });
 
-gltfLoader.load('/Duck.glb', (gltf) => {
+gltfLoader.load('Duck.glb', (gltf) => {
   duckModel = gltf.scene;
   duckModel.scale.set(0.022, 0.022, 0.022); 
   duckModel.traverse(child => {
