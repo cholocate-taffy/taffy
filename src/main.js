@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 // GLTFLoader and other necessary modules
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
+import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
 
