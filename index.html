@@ -2,17 +2,12 @@
 <html lang="zh-CN">
 
 <head>
+    <title>Happy Birthday</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    <title>Happy Birthday</title>
-
-    <!-- 链接到您的外部样式表，这是Vite项目的标准做法 -->
-    <link rel="stylesheet" href="/src/style.css" />
-
-    <!-- 手机端调试工具 (当所有问题都解决后，您可以删除这两行) -->
+    <link rel="stylesheet" href="style.css">
     <script src="//cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
-
 </head>
 
 <body>
@@ -79,8 +74,14 @@
         </div>
     </div>
 
-    <!-- Vite 标准的模块加载方式，这是最重要的一行 -->
-    <script type="module" src="/src/main.js"></script>
+    <!-- 脚本引入 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/misc/GPUComputationRenderer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/RGBELoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/math/SimplexNoise.js"></script>
+    <script src="/src/main.js"></script>
+
 </body>
 
 </html>
