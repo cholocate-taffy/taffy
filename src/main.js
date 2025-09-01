@@ -155,7 +155,7 @@ const zAxis = new THREE.Vector3(0, 0, -1);
 // 舞台美术：环境、雾气、光照
 // =================================================================
 const rgbeLoader = new RGBELoader();
-rgbeLoader.load('/mysky.hdr', (texture) => {
+rgbeLoader.load('mysky.hdr', (texture) => {
   texture.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = texture;
   scene.environment = texture;
