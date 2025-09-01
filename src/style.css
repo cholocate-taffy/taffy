@@ -1,0 +1,394 @@
+/**
+ * @file 3D 交互式场景样式表
+ * @description 本文件包含项目的所有 CSS 样式，负责定义页面布局、UI 控件、
+ * 游戏遮罩层以及响应式设计的视觉表现。
+ */
+
+/* =================================================================
+// 全局与基础样式 (Global & Base Styles)
+// -----------------------------------------------------------------
+// 定义整个页面的基础样式，确保画布和布局正确。
+// ================================================================= */
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #000;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  /* 禁止用户选择文本，这在游戏或应用类网页中能提升体验 */
+  user-select: none;
+}
+
+#webgl-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* =================================================================
+// UI 控件样式 (UI Controls)
+// -----------------------------------------------------------------
+// 包括音乐按钮、虚拟摇杆和跳跃按钮的样式。
+// ================================================================= */
+
+/* 音乐控制按钮 */
+#music-control {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 50px;
+  height: 50px;
+  background-color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 101;
+  transition: background-color 0.3s;
+  box-sizing: border-box;
+}
+
+#music-control:hover {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+#music-control svg {
+  width: 28px;
+  height: 28px;
+  color: #fff;
+}
+
+/* 虚拟摇杆 */
+#joystick {
+  position: absolute;
+  bottom: 30px;
+  left: 30px;
+  width: 100px;
+  height: 100px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+#joystick-knob {
+  width: 50px;
+  height: 50px;
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  transition: transform 0.1s;
+}
+
+/* 跳跃按钮 */
+#jump-button {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  width: 80px;
+  height: 80px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  z-index: 10;
+}
+
+#jump-button:active {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+/* =================================================================
+// 游戏遮罩层与内容面板 (Game Overlay & Content)
+// -----------------------------------------------------------------
+// 定义了小游戏界面的整体布局、背景和过渡效果。
+// ================================================================= */
+#game-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: none;
+  /* 默认隐藏，由 JS 控制显示 */
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+#game-overlay.visible {
+  opacity: 1;
+}
+
+#game-content {
+  padding: 35px 40px;
+  border-radius: 25px;
+  width: 90%;
+  max-width: 460px;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transform: scale(0.95);
+  opacity: 0;
+  transition: transform 0.5s ease, opacity 0.5s ease;
+  background: #0c0a18;
+}
+
+#game-overlay.visible #game-content {
+  transform: scale(1);
+  opacity: 1;
+}
+
+#game-title {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 30px;
+  font-weight: bold;
+  color: #c4b7ff;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3), 0 0 20px rgba(196, 183, 255, 0.8);
+}
+
+#game-controls button {
+  margin-top: 25px;
+  padding: 14px 32px;
+  border-radius: 50px;
+  border: 1px solid rgba(196, 183, 255, 0.8);
+  cursor: pointer;
+  font-size: 19px;
+  font-weight: bold;
+  color: #fff;
+  background: linear-gradient(45deg, rgba(196, 183, 255, 0.3), rgba(160, 132, 255, 0.5));
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+#game-controls button:hover {
+  background: linear-gradient(45deg, rgba(196, 183, 255, 0.5), rgba(160, 132, 255, 0.7));
+  box-shadow: 0 6px 20px rgba(196, 183, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+/* =================================================================
+// 记忆游戏具体样式 (Memory Game Specifics)
+// -----------------------------------------------------------------
+// 定义了游戏棋盘、星星和状态文本的样式。
+// ================================================================= */
+#memory-game-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 25px;
+  margin: 35px 0;
+  pointer-events: none;
+  /* 默认不可点击，由 JS 的 .player-turn 类来控制 */
+}
+
+#memory-game-board.player-turn {
+  pointer-events: auto;
+}
+
+.memory-star {
+  width: 100%;
+  padding-bottom: 100%;
+  /* 使用 padding-bottom 技巧创建响应式正方形 */
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.2));
+}
+
+.memory-star::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--star-color);
+  /* 使用 CSS 变量定义颜色 */
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  transition: all 0.3s ease-in-out;
+  opacity: 0.7;
+}
+
+.memory-star:hover::before {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* 定义不同星星的颜色变量，方便管理 */
+#star-green {
+  --star-color: #2eff71;
+}
+
+#star-red {
+  --star-color: #ff4c3c;
+}
+
+#star-yellow {
+  --star-color: #f1c40f;
+}
+
+#star-blue {
+  --star-color: #3498db;
+}
+
+#star-orange {
+  --star-color: #e67e22;
+}
+
+#star-purple {
+  --star-color: #9b59b6;
+}
+
+/* 星星被点亮时的样式 */
+.memory-star.lit::before {
+  background-color: #fff;
+  opacity: 1;
+  transform: scale(1.2) rotate(20deg);
+  box-shadow: 0 0 25px #fff, 0 0 40px var(--star-color), 0 0 60px var(--star-color);
+}
+
+#game-status {
+  min-height: 54px;
+  font-size: 20px;
+  line-height: 1.5;
+  color: #ecf0f1;
+  transition: color 0.3s;
+  font-weight: 500;
+}
+
+#game-status.win {
+  color: #2eff71;
+  text-shadow: 0 0 10px #2eff71;
+}
+
+#game-status.lose {
+  color: #ff4c3c;
+  text-shadow: 0 0 10px #ff4c3c;
+}
+
+
+/* =================================================================
+// 响应式设计与动画 (Responsive & Animations)
+// -----------------------------------------------------------------
+// 包含媒体查询和 @keyframes 动画定义。
+// ================================================================= */
+
+/* 移动端竖屏提示 */
+#orientation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.95);
+  color: white;
+  z-index: 200;
+  display: none;
+  /* 默认隐藏 */
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+#orientation-overlay p {
+  font-size: 18px;
+  margin-top: 20px;
+}
+
+#orientation-overlay svg {
+  width: 64px;
+  height: 64px;
+  animation: rotate-phone 1.5s ease-in-out infinite;
+}
+
+@keyframes rotate-phone {
+
+  50%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+/* 游戏失败时的晃动动画 */
+.shake {
+  animation: shake 0.5s cubic-bezier(.36, .07, .19, .97) both;
+}
+
+@keyframes shake {
+
+  10%,
+  90% {
+    transform: translate3d(-1px, 0, 0);
+  }
+
+  20%,
+  80% {
+    transform: translate3d(2px, 0, 0);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-4px, 0, 0);
+  }
+
+  40%,
+  60% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+/* 媒体查询：当屏幕为竖屏时，显示旋转提示 */
+@media screen and (orientation: portrait) {
+  #orientation-overlay {
+    display: flex;
+  }
+}
+
+/* 媒体查询：针对较窄的横屏设备（如某些手机横屏）优化游戏面板布局 */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  #game-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 40px;
+    max-width: 650px;
+    width: 95%;
+    padding: 25px;
+  }
+
+  #game-info-panel {
+    flex: 0 0 200px;
+    align-self: stretch;
+  }
+
+  #memory-game-board {
+    flex: 1;
+    margin: 0;
+    gap: 15px;
+    max-width: 300px;
+  }
+
+  #game-title {
+    font-size: 24px;
+    margin-bottom: 15px;
+  }
+
+  #game-controls button {
+    margin-top: 20px;
+    padding: 12px 24px;
+    font-size: 16px;
+  }
+
+  #game-status {
+    font-size: 18px;
+    flex-grow: 1;
+  }
+}
