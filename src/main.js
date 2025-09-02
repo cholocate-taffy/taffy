@@ -313,7 +313,7 @@ const controlParams = {
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
   mouseSensitivity: 0.0023,
-  touchSensitivity: 0.015
+  touchSensitivity: 0.008 // 已将灵敏度调整到更合适的值
 };
 
 const cameraParams = {
@@ -332,9 +332,9 @@ let targetCameraPitch = cameraParams.initialPitch;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-let isDraggingOnWater = false;
 let joystickPointerId = null;
 let orbitPointerId = null;
+let waterPointerId = null; // 为水面交互添加独立的指针ID
 let joystickStart = new THREE.Vector2();
 let joystickCurrent = new THREE.Vector2();
 
@@ -937,7 +937,9 @@ document.addEventListener('pointerdown', (event) => {
 
   const waterIntersects = raycaster.intersectObject(meshRay);
   if (waterIntersects.length > 0) {
-    isDraggingOnWater = true;
+    if (waterPointerId === null) {
+      waterPointerId = event.pointerId;
+    }
     const point = waterIntersects[0].point;
     const localX = point.x - waterMesh.position.x;
     const localZ = point.z - waterMesh.position.z;
@@ -992,6 +994,21 @@ document.addEventListener('pointermove', (event) => {
     return; // 摇杆移动时，不执行其他移动逻辑
   }
 
+  // 处理水面交互
+  if (event.pointerId === waterPointerId) {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(meshRay);
+    if (intersects.length > 0) {
+      const point = intersects[0].point;
+      const localX = point.x - waterMesh.position.x;
+      const localZ = point.z - waterMesh.position.z;
+      heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
+    }
+    return;
+  }
+
   // 更新活动指针位置
   if (activePointers.has(event.pointerId)) {
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1020,20 +1037,6 @@ document.addEventListener('pointermove', (event) => {
     targetCameraPitch -= event.movementY * sensitivity;
     targetCameraPitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, targetCameraPitch));
   }
-
-  // 处理水面拖拽效果
-  if (isDraggingOnWater) {
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(meshRay);
-    if (intersects.length > 0) {
-      const point = intersects[0].point;
-      const localX = point.x - waterMesh.position.x;
-      const localZ = point.z - waterMesh.position.z;
-      heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
-    }
-  }
 });
 
 const onPointerUp = (event) => {
@@ -1054,15 +1057,17 @@ const onPointerUp = (event) => {
     keyboardState['d'] = false;
   }
 
+  // 处理水面交互手指抬起
+  if (event.pointerId === waterPointerId) {
+    waterPointerId = null;
+    if (heightmapVariable) {
+      heightmapVariable.material.uniforms.mousePos.value.set(10000, 10000);
+    }
+  }
+
   // 处理视角转动手指抬起
   if (event.pointerId === orbitPointerId) {
     orbitPointerId = null;
-  }
-
-  // 重置水面拖拽状态
-  isDraggingOnWater = false;
-  if (heightmapVariable) {
-    heightmapVariable.material.uniforms.mousePos.value.set(10000, 10000);
   }
 };
 
@@ -1074,12 +1079,6 @@ document.addEventListener('wheel', (event) => {
   cameraParams.distance += event.deltaY * 0.05;
   cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
 });
-
-// 移除旧的 touch 事件监听器
-// document.addEventListener('touchstart', ...);
-// document.addEventListener('touchmove', ...);
-// document.addEventListener('touchend', ...);
-
 
 function animate() {
   requestAnimationFrame(animate);
