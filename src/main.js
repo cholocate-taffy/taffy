@@ -21,7 +21,7 @@ document.head.appendChild(style);
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 const performanceSettings = {
-  pixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio, 2),
+  pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
   gpgpuWidth: isMobile ? 32 : 128,
   numDucks: isMobile ? 1 : 7,
   shadows: false,
@@ -35,7 +35,7 @@ const assetPaths = {
   layout: isMobile ? '布局_mobile.glb' : '布局.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
-  sky: isMobile ? 'mysky.jpg' : 'mysky.hdr' 
+  sky: isMobile ? 'mysky.webp' : 'mysky.hdr' 
 };
 
 
