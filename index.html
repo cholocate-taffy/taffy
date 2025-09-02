@@ -2,17 +2,21 @@
 <html lang="zh-CN">
 
 <head>
-    <title>Happy Birthday</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>Happy Birthday</title>
 
-    <link rel="stylesheet" href="style.css">
+    <!-- 链接到您的外部样式表 -->
+    <link rel="stylesheet" href="/src/style.css" />
 
+    <!-- 手机端调试工具 (问题解决后可以删除这两行) -->
     <script src="//cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
+
 </head>
 
 <body>
+    <!-- 旋转提示遮罩层 -->
     <div id="orientation-overlay">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
@@ -24,10 +28,13 @@
         <p>为了获得最佳体验，请旋转您的设备</p>
     </div>
 
+    <!-- three.js 渲染的目标画布 -->
     <canvas id="webgl-canvas"></canvas>
 
+    <!-- 背景音乐 -->
     <audio id="bg-music" loop src="Mickey Guyton,Kane Brown - Nothing Compares To You.mp3"></audio>
 
+    <!-- 音乐控制按钮 -->
     <div id="music-control">
         <svg id="icon-music-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -42,12 +49,15 @@
         </svg>
     </div>
 
+    <!-- 虚拟摇杆的HTML结构 -->
     <div id="joystick">
         <div id="joystick-knob"></div>
     </div>
 
+    <!-- 跳跃按钮的HTML结构 -->
     <div id="jump-button"></div>
 
+    <!-- 游戏画面遮罩层 -->
     <div id="game-overlay">
         <div id="game-content">
             <div id="game-info-panel">
@@ -69,6 +79,7 @@
         </div>
     </div>
 
+    <!-- Vite 标准的模块加载方式 -->
     <script type="module" src="/src/main.js"></script>
 </body>
 
