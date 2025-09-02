@@ -205,7 +205,8 @@ function updateLoadingStatus(message) {
 
 // 2. 创建并配置 DRACOLoader
 const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('/draco/'); // 确保 draco 文件夹在 public 目录下
+// --- 修改：将解码器路径指向一个可靠的公共 CDN ---
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
 
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
@@ -1169,3 +1170,4 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
