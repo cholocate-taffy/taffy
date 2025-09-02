@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+// 从我们手动创建的本地文件导入 SimplexNoise
 import { SimplexNoise } from './SimplexNoise.js';
 
 // =================================================================
@@ -21,98 +22,89 @@ renderer.shadowMap.enabled = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.8;
 // =================================================================
-// GPGPU 和着色器定义 (已更新为官方案例版本)
+// GPGPU 和着色器定义
 // =================================================================
-const WIDTH = 128; // 使用官方案例的纹理宽度
+const WIDTH = 128;
 const BOUNDS = 58;
-// 您场景的水面大小
-const BOUNDS_HALF = BOUNDS * 0.5; // 新增常量
-// 【已替换】水面模拟着色器
+const BOUNDS_HALF = BOUNDS * 0.5;
 const heightmapFragmentShader = `
-	#include <common>
-	uniform vec2 mousePos;
-	uniform float mouseSize;
-	uniform float viscosity;
-	uniform float deep;
-	void main()	{
-		vec2 cellSize = 1.0 / resolution.xy;
-		vec2 uv = gl_FragCoord.xy * cellSize;
-		// heightmapValue.x == 上一帧的高度
-		// heightmapValue.y == 上上帧的高度
-		vec4 heightmapValue = texture2D( heightmap, uv );
-		vec4 north = texture2D( heightmap, uv + vec2( 0.0, cellSize.y ) );
-		vec4 south = texture2D( heightmap, uv + vec2( 0.0, - cellSize.y ) );
-		vec4 east = texture2D( heightmap, uv + vec2( cellSize.x, 0.0 ) );
-		vec4 west = texture2D( heightmap, uv + vec2( - cellSize.x, 0.0 ) );
-		float newHeight = ( ( north.x + south.x + east.x + west.x ) * 0.5 - heightmapValue.y ) * viscosity;
-		// 鼠标影响
-		float mousePhase = clamp( length( ( uv - vec2( 0.5 ) ) * BOUNDS - vec2( mousePos.x, -mousePos.y ) ) * PI / mouseSize, 0.0, PI );
-		newHeight -= ( cos( mousePhase ) + 1.0 ) * deep;
-		heightmapValue.y = heightmapValue.x;
-		heightmapValue.x = newHeight;
-		gl_FragColor = heightmapValue;
-	}
+  #include <common>
+  uniform vec2 mousePos;
+  uniform float mouseSize;
+  uniform float viscosity;
+  uniform float deep;
+  void main() {
+    vec2 cellSize = 1.0 / resolution.xy;
+    vec2 uv = gl_FragCoord.xy * cellSize;
+    vec4 heightmapValue = texture2D( heightmap, uv );
+    vec4 north = texture2D( heightmap, uv + vec2( 0.0, cellSize.y ) );
+    vec4 south = texture2D( heightmap, uv + vec2( 0.0, - cellSize.y ) );
+    vec4 east = texture2D( heightmap, uv + vec2( cellSize.x, 0.0 ) );
+    vec4 west = texture2D( heightmap, uv + vec2( - cellSize.x, 0.0 ) );
+    float newHeight = ( ( north.x + south.x + east.x + west.x ) * 0.5 - heightmapValue.y ) * viscosity;
+    float mousePhase = clamp( length( ( uv - vec2( 0.5 ) ) * BOUNDS - vec2( mousePos.x, -mousePos.y ) ) * PI / mouseSize, 0.0, PI );
+    newHeight -= ( cos( mousePhase ) + 1.0 ) * deep;
+    heightmapValue.y = heightmapValue.x;
+    heightmapValue.x = newHeight;
+    gl_FragColor = heightmapValue;
+  }
 `;
-// 【已替换并修正】读取水位和法线的着色器
 const readWaterLevelFragmentShader = `
-	uniform vec2 point1;
-	uniform sampler2D levelTexture;
-	// Integer to float conversion
-	float shift_right( float v, float amt ) {
-		v = floor( v ) + 0.5;
-		return floor( v / exp2( amt ) );
-	}
-	float shift_left( float v, float amt ) {
-		return floor( v * exp2( amt ) + 0.5 );
-	}
-	float mask_last( float v, float bits ) {
-		return mod( v, shift_left( 1.0, bits ) );
-	}
-	float extract_bits( float num, float from, float to ) {
-		from = floor( from + 0.5 );
-		to = floor( to + 0.5 );
-		return mask_last( shift_right( num, from ), to - from );
-	}
-	vec4 encode_float( float val ) {
-		if ( val == 0.0 ) return vec4( 0, 0, 0, 0 );
-		float sign = val > 0.0 ? 0.0 : 1.0;
-		val = abs( val );
-		float exponent = floor( log2( val ) );
-		float biased_exponent = exponent + 127.0;
-		float fraction = ( ( val / exp2( exponent ) ) - 1.0 ) * 8388608.0;
-		float t = biased_exponent / 2.0;
-		float last_bit_of_biased_exponent = fract( t ) * 2.0;
-		float remaining_bits_of_biased_exponent = floor( t );
-		float byte4 = extract_bits( fraction, 0.0, 8.0 ) / 255.0;
-		float byte3 = extract_bits( fraction, 8.0, 16.0 ) / 255.0;
-		float byte2 = ( last_bit_of_biased_exponent * 128.0 + extract_bits( fraction, 16.0, 23.0 ) ) / 255.0;
-		float byte1 = ( sign * 128.0 + remaining_bits_of_biased_exponent ) / 255.0;
-		return vec4( byte4, byte3, byte2, byte1 );
-	}
-	void main()	{
-		// 【修正】使用 WIDTH (输入纹理的宽度) 来计算正确的采样步长，而不是用 resolution (输出目标的尺寸)
-		float aCellSize = 1.0 / WIDTH;
-		float waterLevel = texture2D( levelTexture, point1 ).x;
-		vec2 normal = vec2(
-			( texture2D( levelTexture, point1 + vec2( -aCellSize, 0.0 ) ).x - texture2D( levelTexture, point1 + vec2( aCellSize, 0.0 ) ).x ) * WIDTH / BOUNDS,
-			( texture2D( levelTexture, point1 + vec2( 0.0, -aCellSize ) ).x - texture2D( levelTexture, point1 + vec2( 0.0, aCellSize ) ).x ) * WIDTH / BOUNDS
-		);
-		if ( gl_FragCoord.x < 1.5 ) {
-			gl_FragColor = encode_float( waterLevel );
-		} else if ( gl_FragCoord.x < 2.5 ) {
-			gl_FragColor = encode_float( normal.x );
-		} else if ( gl_FragCoord.x < 3.5 ) {
-			gl_FragColor = encode_float( normal.y );
-		} else {
-			gl_FragColor = encode_float( 0.0 );
-		}
-	}
+  uniform vec2 point1;
+  uniform sampler2D levelTexture;
+  float shift_right( float v, float amt ) {
+    v = floor( v ) + 0.5;
+    return floor( v / exp2( amt ) );
+  }
+  float shift_left( float v, float amt ) {
+    return floor( v * exp2( amt ) + 0.5 );
+  }
+  float mask_last( float v, float bits ) {
+    return mod( v, shift_left( 1.0, bits ) );
+  }
+  float extract_bits( float num, float from, float to ) {
+    from = floor( from + 0.5 );
+    to = floor( to + 0.5 );
+    return mask_last( shift_right( num, from ), to - from );
+  }
+  vec4 encode_float( float val ) {
+    if ( val == 0.0 ) return vec4( 0, 0, 0, 0 );
+    float sign = val > 0.0 ? 0.0 : 1.0;
+    val = abs( val );
+    float exponent = floor( log2( val ) );
+    float biased_exponent = exponent + 127.0;
+    float fraction = ( ( val / exp2( exponent ) ) - 1.0 ) * 8388608.0;
+    float t = biased_exponent / 2.0;
+    float last_bit_of_biased_exponent = fract( t ) * 2.0;
+    float remaining_bits_of_biased_exponent = floor( t );
+    float byte4 = extract_bits( fraction, 0.0, 8.0 ) / 255.0;
+    float byte3 = extract_bits( fraction, 8.0, 16.0 ) / 255.0;
+    float byte2 = ( last_bit_of_biased_exponent * 128.0 + extract_bits( fraction, 16.0, 23.0 ) ) / 255.0;
+    float byte1 = ( sign * 128.0 + remaining_bits_of_biased_exponent ) / 255.0;
+    return vec4( byte4, byte3, byte2, byte1 );
+  }
+  void main() {
+    float aCellSize = 1.0 / WIDTH;
+    float waterLevel = texture2D( levelTexture, point1 ).x;
+    vec2 normal = vec2(
+      ( texture2D( levelTexture, point1 + vec2( -aCellSize, 0.0 ) ).x - texture2D( levelTexture, point1 + vec2( aCellSize, 0.0 ) ).x ) * WIDTH / BOUNDS,
+      ( texture2D( levelTexture, point1 + vec2( 0.0, -aCellSize ) ).x - texture2D( levelTexture, point1 + vec2( 0.0, aCellSize ) ).x ) * WIDTH / BOUNDS
+    );
+    if ( gl_FragCoord.x < 1.5 ) {
+      gl_FragColor = encode_float( waterLevel );
+    } else if ( gl_FragCoord.x < 2.5 ) {
+      gl_FragColor = encode_float( normal.x );
+    } else if ( gl_FragCoord.x < 3.5 ) {
+      gl_FragColor = encode_float( normal.y );
+    } else {
+      gl_FragColor = encode_float( 0.0 );
+    }
+  }
 `;
 let waterMesh, meshRay, gpuCompute, heightmapVariable;
 let duckModel, readWaterLevelShader, readWaterLevelRenderTarget, readWaterLevelImage;
 const ducks = [];
 const NUM_DUCKS = 7;
-// 【已修改】鸭子数量增加到7
 let kirbyModel, animationMixer, kirbyActions = {};
 let activeAction, previousAction;
 const clock = new THREE.Clock();
@@ -133,7 +125,9 @@ const interactiveButtons = [];
 let doorButton, treeButton, waterButton;
 let isDoorAnimationPlaying = false;
 let isWinLoseAnimationPlaying = false;
-const simplex = new THREE.SimplexNoise();
+// *** 关键修正 ***
+// 直接使用导入的 SimplexNoise 类，而不是 THREE.SimplexNoise
+const simplex = new SimplexNoise();
 let frame = 0;
 let isReady = false;
 let physicsInitialized = false;
@@ -149,7 +143,7 @@ const zAxis = new THREE.Vector3(0, 0, -1);
 // =================================================================
 // 舞台美术：环境、雾气、光照
 // =================================================================
-const rgbeLoader = new THREE.RGBELoader();
+const rgbeLoader = new RGBELoader();
 rgbeLoader.load('/mysky.hdr', (texture) => {
   texture.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = texture;
@@ -164,7 +158,7 @@ sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 // =================================================================
-// 水面和鸭子参数 (已固化)
+// 水面和鸭子参数
 // =================================================================
 const waterParams = {
   color: '#186a91',
@@ -214,20 +208,20 @@ function initWater() {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <beginnormal_vertex>',
       `
-            vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
-            vec3 objectNormal = vec3(
-                ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                1.0
-            );
-            `
+            vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
+            vec3 objectNormal = vec3(
+                ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                1.0
+            );
+            `
     );
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
       `
-            float heightValue = texture2D( heightmap, uv ).x;
-            vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 ); // 乘以 6.0 来控制波浪高度
-            `
+            float heightValue = texture2D( heightmap, uv ).x;
+            vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
+            `
     );
     material.userData.shader = shader;
   };
@@ -243,12 +237,11 @@ function initWater() {
   meshRay.rotation.x = -Math.PI / 2;
   meshRay.position.copy(waterMesh.position);
   scene.add(meshRay);
-  gpuCompute = new THREE.GPUComputationRenderer(WIDTH, WIDTH, renderer);
+  gpuCompute = new GPUComputationRenderer(WIDTH, WIDTH, renderer);
   const heightmap0 = gpuCompute.createTexture();
   fillTexture(heightmap0);
   heightmapVariable = gpuCompute.addVariable('heightmap', heightmapFragmentShader, heightmap0);
   gpuCompute.setVariableDependencies(heightmapVariable, [heightmapVariable]);
-  // 【已修改】使用固化的最终参数
   heightmapVariable.material.uniforms['mousePos'] = { value: new THREE.Vector2(10000, 10000) };
   heightmapVariable.material.uniforms['mouseSize'] = { value: 1.91 };
   heightmapVariable.material.uniforms['viscosity'] = { value: 0.98 };
@@ -275,7 +268,7 @@ function initWater() {
 }
 initWater();
 // =================================================================
-// 【已固定】最终参数
+// 控制参数
 // =================================================================
 const controlParams = {
   speed: 30,
@@ -331,7 +324,6 @@ const jumpButton = document.getElementById('jump-button');
 let joystickActive = false;
 let joystickStart = new THREE.Vector2();
 let joystickCurrent = new THREE.Vector2();
-// 【已修正】使用 Pointer Events 统一处理摇杆和跳跃按钮
 joystick.addEventListener('pointerdown', (event) => {
   event.target.setPointerCapture(event.pointerId);
   joystickActive = true;
@@ -428,7 +420,6 @@ function updateKirbyMovement(deltaTime) {
   const downOrigin = kirbyModel.position.clone().add(new THREE.Vector3(0, 1, 0));
   downRaycaster.set(downOrigin, new THREE.Vector3(0, -1, 0));
   const groundIntersects = downRaycaster.intersectObject(layoutModel, true);
-  // 【已修正】增大地面检测容错距离
   const onGround = groundIntersects.length > 0 && groundIntersects[0].distance < 1.5;
   if (onGround) {
     isGrounded = true;
@@ -472,7 +463,7 @@ function updateCamera() {
 // =================================================================
 // 加载模型
 // =================================================================
-const gltfLoader = new THREE.GLTFLoader();
+const gltfLoader = new GLTFLoader();
 gltfLoader.load('/布局.glb', (gltf) => {
   layoutModel = gltf.scene;
   layoutModel.position.set(0, 0, 0);
@@ -535,7 +526,6 @@ gltfLoader.load('/布局.glb', (gltf) => {
   interactiveButtons.push(treeButton);
   waterButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
   waterButton.name = 'waterButton';
-  // 【已修改】固化最终参数
   waterButton.position.set(84, -14.5, -120);
   waterButton.rotation.set(Math.PI, Math.PI, 1.74);
   waterButton.scale.set(2.5, 2.5, 2.5);
@@ -566,7 +556,7 @@ gltfLoader.load('/kirby.glb', (gltf) => {
 });
 gltfLoader.load('/Duck.glb', (gltf) => {
   duckModel = gltf.scene;
-  duckModel.scale.set(0.022, 0.022, 0.022); // 使用您之前的大小
+  duckModel.scale.set(0.022, 0.022, 0.022);
   duckModel.traverse(child => {
     if (child.isMesh) {
       child.castShadow = true;
@@ -585,7 +575,6 @@ function createDucks() {
     ducks.push(duck);
   }
 }
-// 【已修正】duckDynamics 函数，使用固化参数
 function duckDynamics() {
   const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
   readWaterLevelShader.uniforms['levelTexture'].value = heightmapTexture;
@@ -643,7 +632,7 @@ function duckDynamics() {
   }
 }
 // =================================================================
-// 记忆星星游戏逻辑 (完整保留)
+// 记忆星星游戏逻辑
 // =================================================================
 const gameOverlay = document.getElementById('game-overlay');
 const closeGameButton = document.getElementById('close-game-button');
@@ -799,7 +788,7 @@ bgMusic.onpause = () => {
 // 主交互逻辑
 // =================================================================
 document.addEventListener('pointerdown', (event) => {
-  if (event.target.closest('#music-control')) return; // GUI check removed
+  if (event.target.closest('#music-control')) return;
   if (gameOverlay.classList.contains('visible') && !event.target.closest('#game-content')) return;
   isMouseDown = true;
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -853,7 +842,6 @@ document.addEventListener('pointerup', () => {
   }
 });
 document.addEventListener('pointermove', (event) => {
-  // 【已修正】增加触摸灵敏度
   if (isOrbiting && !isWaterMode) {
     const sensitivity = event.pointerType === 'touch' ? controlParams.mouseSensitivity * 2.5 : controlParams.mouseSensitivity;
     targetCameraYaw -= event.movementX * sensitivity;
@@ -906,7 +894,6 @@ document.addEventListener('touchend', (event) => {
 function animate() {
   requestAnimationFrame(animate);
   const deltaTime = clock.getDelta();
-  // 【已修正】加载完成后，进行一次物理初始化
   if (isReady && !physicsInitialized) {
     const downOrigin = kirbyModel.position.clone().add(new THREE.Vector3(0, 50, 0));
     downRaycaster.set(downOrigin, new THREE.Vector3(0, -1, 0));
@@ -918,15 +905,13 @@ function animate() {
     isGrounded = true;
     physicsInitialized = true;
   }
-  // GPGPU 计算和鸭子动态
   frame++;
-  // 使用固定的模拟速度，您可以调整数字 3 (1-6) 来改变速度
   if (frame >= 7 - 4) {
     if (gpuCompute && waterMesh && waterMesh.material.userData.shader) {
       gpuCompute.compute();
       const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
       waterMesh.material.userData.shader.uniforms.heightmap.value = heightmapTexture;
-      if (ducks.length > 0) { // 确保鸭子模型已加载
+      if (ducks.length > 0) {
         duckDynamics();
       }
     }
