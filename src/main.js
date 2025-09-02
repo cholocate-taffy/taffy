@@ -29,6 +29,18 @@ const performanceSettings = {
 };
 
 // =================================================================
+// 条件资源路径 (Conditional Asset Paths)
+// 根据设备类型选择加载不同版本的资源
+// =================================================================
+const assetPaths = {
+  layout: isMobile ? '布局_mobile.glb' : '布局.glb',
+  kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
+  duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
+  sky: 'mysky_optimized.jpg' // 天空贴图已优化，共用一个即可
+};
+
+
+// =================================================================
 // 初始化基础组件
 // =================================================================
 const scene = new THREE.Scene();
@@ -190,7 +202,7 @@ const onErrorLoading = (error) => {
 
 function loadSky() {
   updateLoadingStatus('加载天空...');
-  textureLoader.load('mysky_optimized.jpg', (texture) => {
+  textureLoader.load(assetPaths.sky, (texture) => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = texture;
     scene.environment = texture;
@@ -201,7 +213,7 @@ function loadSky() {
 
 function loadDucks() {
   updateLoadingStatus('加载小鸭子...');
-  gltfLoader.load('Duck.glb', (gltf) => {
+  gltfLoader.load(assetPaths.duck, (gltf) => {
     duckModel = gltf.scene;
     duckModel.scale.set(0.022, 0.022, 0.022);
     duckModel.traverse(child => {
@@ -216,7 +228,7 @@ function loadDucks() {
 
 function loadKirby() {
   updateLoadingStatus('加载卡比...');
-  gltfLoader.load('kirby.glb', (gltf) => {
+  gltfLoader.load(assetPaths.kirby, (gltf) => {
     kirbyModel = gltf.scene;
     kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
     kirbyModel.rotation.y = 4.91;
@@ -245,7 +257,7 @@ function loadKirby() {
 
 function loadLayout() {
   updateLoadingStatus('加载场景...');
-  gltfLoader.load('布局.glb', (gltf) => {
+  gltfLoader.load(assetPaths.layout, (gltf) => {
     layoutModel = gltf.scene;
     layoutModel.position.set(0, 0, 0);
     layoutModel.scale.set(3.5, 3.5, 3.5);
@@ -277,7 +289,6 @@ function loadLayout() {
       }
     });
 
-    // ... (按钮创建逻辑不变)
     const buttonGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
     const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
     doorButton = new THREE.Mesh(buttonGeometry, buttonMaterial); doorButton.name = 'doorButton'; doorButton.position.set(-79.4, -14, -7.4); doorButton.rotation.z = 1.63; doorButton.scale.set(1.5, 1.5, 1.5); scene.add(doorButton); interactiveButtons.push(doorButton);
