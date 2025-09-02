@@ -24,9 +24,9 @@ const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
   gpgpuWidth: isMobile ? 32 : 128,
-  numDucks: isMobile ? 3 : 7, // 已将手机端鸭子数量修改为 3
+  numDucks: isMobile ? 1 : 7,
   shadows: !isMobile,
-  enableGPGPU: true // 已为手机端启用 GPGPU 互动
+  enableGPGPU: !isMobile
 };
 
 // =================================================================
@@ -734,7 +734,7 @@ function duckDynamics() {
 
       pos.y = waterMesh.position.y + pixels[0] * 6.0;
 
-      waterNormal.multiplyScalar(0.4);
+      waterNormal.multiplyScalar(0.3);
       sphere.userData.velocity.add(waterNormal);
 
       const drift = new THREE.Vector3(
@@ -1167,3 +1167,4 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
