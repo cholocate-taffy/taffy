@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>Happy Birthday</title>
+
+    <!-- 链接到您的外部样式表 -->
+
+    <!-- 手机端调试工具 (问题解决后可以删除这两行) -->
+    <script src="//cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+
+  <script type="module" crossorigin src="/taffy/assets/index-BZQn5PI3.js"></script>
+  <link rel="stylesheet" crossorigin href="/taffy/assets/index-BUcmxzZ-.css">
+</head>
+
+<body>
+    <!-- 旋转提示遮罩层 -->
+    <div id="orientation-overlay">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+                d="M16.4 3.6a9 9 0 0 1 0 16.8M3.6 7.6a9 9 0 0 1 12.8 0M12 2v2M12 20v2M2 12H4M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4" />
+            <path d="M8 12h8" />
+            <path d="M12 8l4 4-4 4" />
+        </svg>
+        <p>为了获得最佳体验，请旋转您的设备</p>
+    </div>
+
+    <!-- three.js 渲染的目标画布 -->
+    <canvas id="webgl-canvas"></canvas>
+
+    <!-- 背景音乐 -->
+    <audio id="bg-music" loop src="Mickey Guyton,Kane Brown - Nothing Compares To You.mp3"></audio>
+
+    <!-- 音乐控制按钮 -->
+    <div id="music-control">
+        <svg id="icon-music-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="23" y1="1" x2="1" y2="23"></line>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <svg id="icon-music-on" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+    </div>
+
+    <!-- 虚拟摇杆的HTML结构 -->
+    <div id="joystick">
+        <div id="joystick-knob"></div>
+    </div>
+
+    <!-- 跳跃按钮的HTML结构 -->
+    <div id="jump-button"></div>
+
+    <!-- 游戏画面遮罩层 -->
+    <div id="game-overlay">
+        <div id="game-content">
+            <div id="game-info-panel">
+                <h1 id="game-title">帮助卡比寻找记忆star</h1>
+                <p id="game-status">记住闪烁的星星顺序并重复它。</p>
+                <div id="game-controls">
+                    <button id="start-game-button">开始游戏</button>
+                    <button id="close-game-button" style="display: none;">关闭</button>
+                </div>
+            </div>
+            <div id="memory-game-board">
+                <div class="memory-star" id="star-green" data-color="green"></div>
+                <div class="memory-star" id="star-red" data-color="red"></div>
+                <div class="memory-star" id="star-yellow" data-color="yellow"></div>
+                <div class="memory-star" id="star-blue" data-color="blue"></div>
+                <div class="memory-star" id="star-orange" data-color="orange"></div>
+                <div class="memory-star" id="star-purple" data-color="purple"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vite 标准的模块加载方式 -->
+</body>
+
+</html>
