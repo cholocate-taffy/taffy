@@ -179,7 +179,7 @@ const yAxis = new THREE.Vector3(0, 1, 0);
 const zAxis = new THREE.Vector3(0, 0, -1);
 
 // =================================================================
-// 渐进式加载逻辑 (Progressive Loading Logic)
+// 资源加载逻辑 (Asset Loading Logic)
 // =================================================================
 const loadingIndicator = document.createElement('div');
 loadingIndicator.style.position = 'fixed';
@@ -192,115 +192,159 @@ loadingIndicator.style.fontFamily = 'sans-serif';
 loadingIndicator.innerText = '正在加载...';
 document.body.appendChild(loadingIndicator);
 
-const gltfLoader = new GLTFLoader();
-const textureLoader = new THREE.TextureLoader();
-
 const onErrorLoading = (error) => {
   console.error('An error happened during asset loading:', error.message || error);
   loadingIndicator.innerHTML = '资源加载失败<br>请尝试刷新页面。';
 };
 
-function loadSky() {
-  updateLoadingStatus('加载天空...');
-  textureLoader.load(assetPaths.sky, (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    scene.background = texture;
-    scene.environment = texture;
-    loadingIndicator.style.display = 'none'; // 全部加载完成，隐藏提示
-    isReady = true; // 允许开始交互
-  }, undefined, onErrorLoading);
-}
-
-function loadDucks() {
-  updateLoadingStatus('加载小鸭子...');
-  gltfLoader.load(assetPaths.duck, (gltf) => {
-    duckModel = gltf.scene;
-    duckModel.scale.set(0.022, 0.022, 0.022);
-    duckModel.traverse(child => {
-      if (child.isMesh) {
-        child.castShadow = performanceSettings.shadows;
-      }
-    });
-    createDucks();
-    loadSky(); // 加载天空
-  }, undefined, onErrorLoading);
-}
-
-function loadKirby() {
-  updateLoadingStatus('加载卡比...');
-  gltfLoader.load(assetPaths.kirby, (gltf) => {
-    kirbyModel = gltf.scene;
-    kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
-    kirbyModel.rotation.y = 4.91;
-    kirbyModel.scale.set(2.5, 2.5, 2.5);
-    kirbyModel.traverse((child) => {
-      if (child.isMesh) child.castShadow = performanceSettings.shadows;
-    });
-    scene.add(kirbyModel);
-
-    cameraTargetPosition.copy(kirbyModel.position);
-
-    animationMixer = new THREE.AnimationMixer(kirbyModel);
-    const idleClip = THREE.AnimationClip.findByName(gltf.animations, 'idle');
-    const runClip = THREE.AnimationClip.findByName(gltf.animations, 'run');
-
-    if (idleClip) {
-      kirbyActions.idle = animationMixer.clipAction(idleClip);
-      activeAction = kirbyActions.idle;
-      activeAction.play();
-    }
-    if (runClip) kirbyActions.run = animationMixer.clipAction(runClip);
-
-    loadDucks(); // 加载鸭子
-  }, undefined, onErrorLoading);
-}
-
-function loadLayout() {
-  updateLoadingStatus('加载场景...');
-  gltfLoader.load(assetPaths.layout, (gltf) => {
-    layoutModel = gltf.scene;
-    layoutModel.position.set(0, 0, 0);
-    layoutModel.scale.set(3.5, 3.5, 3.5);
-    layoutModel.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = performanceSettings.shadows;
-        child.receiveShadow = performanceSettings.shadows;
-      }
-    });
-    scene.add(layoutModel);
-
-    layoutMixer = new THREE.AnimationMixer(layoutModel);
-    const openClip = THREE.AnimationClip.findByName(gltf.animations, 'open');
-    const winClip = THREE.AnimationClip.findByName(gltf.animations, 'win');
-    const loseClip = THREE.AnimationClip.findByName(gltf.animations, 'lose');
-
-    if (openClip) { openAction = layoutMixer.clipAction(openClip); openAction.setLoop(THREE.LoopOnce); openAction.clampWhenFinished = true; }
-    if (winClip) { winAction = layoutMixer.clipAction(winClip); winAction.setLoop(THREE.LoopOnce); winAction.clampWhenFinished = true; }
-    if (loseClip) { loseAction = layoutMixer.clipAction(loseClip); loseAction.setLoop(THREE.LoopOnce); loseAction.clampWhenFinished = true; }
-
-    layoutMixer.addEventListener('finished', (e) => {
-      if (e.action === openAction) isDoorAnimationPlaying = false;
-      if (e.action === winAction || e.action === loseAction) {
-        if (e.action.timeScale > 0) {
-          e.action.paused = false; e.action.setLoop(THREE.LoopOnce); e.action.timeScale = -1; e.action.play();
-        } else {
-          e.action.stop(); e.action.timeScale = 1; isWinLoseAnimationPlaying = false;
-        }
-      }
-    });
-
-    const buttonGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
-    const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
-    doorButton = new THREE.Mesh(buttonGeometry, buttonMaterial); doorButton.name = 'doorButton'; doorButton.position.set(-79.4, -14, -7.4); doorButton.rotation.z = 1.63; doorButton.scale.set(1.5, 1.5, 1.5); scene.add(doorButton); interactiveButtons.push(doorButton);
-    treeButton = new THREE.Mesh(buttonGeometry, buttonMaterial); treeButton.name = 'treeButton'; treeButton.position.set(20, -25, 95); treeButton.scale.set(4, 4, 4); scene.add(treeButton); interactiveButtons.push(treeButton);
-    waterButton = new THREE.Mesh(buttonGeometry, buttonMaterial); waterButton.name = 'waterButton'; waterButton.position.set(84, -14.5, -120); waterButton.rotation.set(Math.PI, Math.PI, 1.74); waterButton.scale.set(2.5, 2.5, 2.5); scene.add(waterButton); interactiveButtons.push(waterButton);
-
-    loadKirby(); // 加载卡比
-  }, undefined, onErrorLoading);
-}
-
 function updateLoadingStatus(message) {
   loadingIndicator.innerText = message;
+}
+
+// --- 资源设置函数 ---
+function setupSky(texture) {
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  scene.background = texture;
+  scene.environment = texture;
+}
+
+function setupLayout(gltf) {
+  layoutModel = gltf.scene;
+  layoutModel.position.set(0, 0, 0);
+  layoutModel.scale.set(3.5, 3.5, 3.5);
+  layoutModel.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = performanceSettings.shadows;
+      child.receiveShadow = performanceSettings.shadows;
+    }
+  });
+  scene.add(layoutModel);
+
+  layoutMixer = new THREE.AnimationMixer(layoutModel);
+  const openClip = THREE.AnimationClip.findByName(gltf.animations, 'open');
+  const winClip = THREE.AnimationClip.findByName(gltf.animations, 'win');
+  const loseClip = THREE.AnimationClip.findByName(gltf.animations, 'lose');
+
+  if (openClip) { openAction = layoutMixer.clipAction(openClip); openAction.setLoop(THREE.LoopOnce); openAction.clampWhenFinished = true; }
+  if (winClip) { winAction = layoutMixer.clipAction(winClip); winAction.setLoop(THREE.LoopOnce); winAction.clampWhenFinished = true; }
+  if (loseClip) { loseAction = layoutMixer.clipAction(loseClip); loseAction.setLoop(THREE.LoopOnce); loseAction.clampWhenFinished = true; }
+
+  layoutMixer.addEventListener('finished', (e) => {
+    if (e.action === openAction) isDoorAnimationPlaying = false;
+    if (e.action === winAction || e.action === loseAction) {
+      if (e.action.timeScale > 0) {
+        e.action.paused = false; e.action.setLoop(THREE.LoopOnce); e.action.timeScale = -1; e.action.play();
+      } else {
+        e.action.stop(); e.action.timeScale = 1; isWinLoseAnimationPlaying = false;
+      }
+    }
+  });
+
+  const buttonGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
+  const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+  doorButton = new THREE.Mesh(buttonGeometry, buttonMaterial); doorButton.name = 'doorButton'; doorButton.position.set(-79.4, -14, -7.4); doorButton.rotation.z = 1.63; doorButton.scale.set(1.5, 1.5, 1.5); scene.add(doorButton); interactiveButtons.push(doorButton);
+  treeButton = new THREE.Mesh(buttonGeometry, buttonMaterial); treeButton.name = 'treeButton'; treeButton.position.set(20, -25, 95); treeButton.scale.set(4, 4, 4); scene.add(treeButton); interactiveButtons.push(treeButton);
+  waterButton = new THREE.Mesh(buttonGeometry, buttonMaterial); waterButton.name = 'waterButton'; waterButton.position.set(84, -14.5, -120); waterButton.rotation.set(Math.PI, Math.PI, 1.74); waterButton.scale.set(2.5, 2.5, 2.5); scene.add(waterButton); interactiveButtons.push(waterButton);
+}
+
+function setupKirby(gltf) {
+  kirbyModel = gltf.scene;
+  kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
+  kirbyModel.rotation.y = 4.91;
+  kirbyModel.scale.set(2.5, 2.5, 2.5);
+  kirbyModel.traverse((child) => {
+    if (child.isMesh) child.castShadow = performanceSettings.shadows;
+  });
+  scene.add(kirbyModel);
+
+  cameraTargetPosition.copy(kirbyModel.position);
+
+  animationMixer = new THREE.AnimationMixer(kirbyModel);
+  const idleClip = THREE.AnimationClip.findByName(gltf.animations, 'idle');
+  const runClip = THREE.AnimationClip.findByName(gltf.animations, 'run');
+
+  if (idleClip) {
+    kirbyActions.idle = animationMixer.clipAction(idleClip);
+    activeAction = kirbyActions.idle;
+    activeAction.play();
+  }
+  if (runClip) kirbyActions.run = animationMixer.clipAction(runClip);
+}
+
+function setupDuck(gltf) {
+  duckModel = gltf.scene;
+  duckModel.scale.set(0.022, 0.022, 0.022);
+  duckModel.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = performanceSettings.shadows;
+    }
+  });
+  createDucks();
+}
+
+
+// --- 条件加载逻辑 ---
+if (isMobile) {
+  // 手机端：渐进式加载
+  const gltfLoaderMobile = new GLTFLoader();
+  const textureLoaderMobile = new THREE.TextureLoader();
+
+  function loadSkyMobile() {
+    updateLoadingStatus('加载天空...');
+    textureLoaderMobile.load(assetPaths.sky, (texture) => {
+      setupSky(texture);
+      loadingIndicator.style.display = 'none';
+      isReady = true;
+    }, undefined, onErrorLoading);
+  }
+
+  function loadDucksMobile() {
+    updateLoadingStatus('加载小鸭子...');
+    gltfLoaderMobile.load(assetPaths.duck, (gltf) => {
+      setupDuck(gltf);
+      loadSkyMobile();
+    }, undefined, onErrorLoading);
+  }
+
+  function loadKirbyMobile() {
+    updateLoadingStatus('加载卡比...');
+    gltfLoaderMobile.load(assetPaths.kirby, (gltf) => {
+      setupKirby(gltf);
+      loadDucksMobile();
+    }, undefined, onErrorLoading);
+  }
+
+  function loadLayoutMobile() {
+    updateLoadingStatus('加载场景...');
+    gltfLoaderMobile.load(assetPaths.layout, (gltf) => {
+      setupLayout(gltf);
+      loadKirbyMobile();
+    }, undefined, onErrorLoading);
+  }
+
+  loadLayoutMobile(); // 启动手机端加载链
+
+} else {
+  // 电脑端：并行加载
+  const desktopManager = new THREE.LoadingManager();
+  const gltfLoaderDesktop = new GLTFLoader(desktopManager);
+  const textureLoaderDesktop = new THREE.TextureLoader(desktopManager);
+
+  desktopManager.onLoad = () => {
+    loadingIndicator.style.display = 'none';
+    isReady = true;
+  };
+  desktopManager.onError = (url) => {
+    console.error('Error loading:', url);
+    onErrorLoading({ message: `Failed to load ${url}` });
+  };
+
+  updateLoadingStatus('正在加载...');
+
+  textureLoaderDesktop.load(assetPaths.sky, setupSky, undefined, onErrorLoading);
+  gltfLoaderDesktop.load(assetPaths.layout, setupLayout, undefined, onErrorLoading);
+  gltfLoaderDesktop.load(assetPaths.kirby, setupKirby, undefined, onErrorLoading);
+  gltfLoaderDesktop.load(assetPaths.duck, setupDuck, undefined, onErrorLoading);
 }
 
 // =================================================================
