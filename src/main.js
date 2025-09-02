@@ -299,7 +299,8 @@ const controlParams = {
   speed: 30,
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
-  mouseSensitivity: 0.0023
+  mouseSensitivity: 0.0023,
+  touchSensitivity: 0.006 // 为触摸滑动增加的新参数
 };
 
 const cameraParams = {
@@ -972,8 +973,11 @@ document.addEventListener('pointerup', () => {
 
 document.addEventListener('pointermove', (event) => {
   if (isOrbiting && !isWaterMode) {
-    targetCameraYaw -= event.movementX * controlParams.mouseSensitivity;
-    targetCameraPitch -= event.movementY * controlParams.mouseSensitivity;
+    // 判断输入类型并选择相应的灵敏度
+    const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
+
+    targetCameraYaw -= event.movementX * sensitivity;
+    targetCameraPitch -= event.movementY * sensitivity;
     targetCameraPitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, targetCameraPitch));
   }
 
@@ -1066,4 +1070,3 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
