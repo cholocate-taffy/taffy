@@ -624,10 +624,6 @@ function updateKirbyMovement(deltaTime) {
     kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
     kirbyVerticalVelocity = 0;
   }
-
-  if (animationMixer) {
-    animationMixer.update(deltaTime);
-  }
 }
 
 function updateCamera() {
