@@ -203,7 +203,7 @@ function updateLoadingStatus(message) {
 
 // 2. 创建并配置 DRACOLoader
 const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('/draco/'); // 确保 draco 文件夹在 public 目录下
+dracoLoader.setDecoderPath('draco/'); // 确保 draco 文件夹在 public 目录下
 
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
