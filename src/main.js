@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'; // 1. 引入 DRACOLoader
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // 重新引入 RGBELoader 供电脑端使用
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
 // =================================================================
@@ -24,7 +25,7 @@ const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
   gpgpuWidth: isMobile ? 32 : 128,
   numDucks: isMobile ? 1 : 7,
-  shadows: false,
+  shadows: !isMobile,
   enableGPGPU: !isMobile
 };
 
@@ -35,7 +36,7 @@ const assetPaths = {
   layout: isMobile ? '布局_mobile.glb' : '布局.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
-  sky: isMobile ? 'mysky.webp' : 'mysky.hdr' 
+  sky: isMobile ? 'mysky.webp' : 'mysky.hdr'
 };
 
 
@@ -62,79 +63,79 @@ const BOUNDS = 58;
 const BOUNDS_HALF = BOUNDS * 0.5;
 
 const heightmapFragmentShader = `
-	#include <common>
-	uniform vec2 mousePos;
-	uniform float mouseSize;
-	uniform float viscosity;
-	uniform float deep;
+  #include <common>
+  uniform vec2 mousePos;
+  uniform float mouseSize;
+  uniform float viscosity;
+  uniform float deep;
 
-	void main()	{
-		vec2 cellSize = 1.0 / resolution.xy;
-		vec2 uv = gl_FragCoord.xy * cellSize;
-		vec4 heightmapValue = texture2D( heightmap, uv );
-		vec4 north = texture2D( heightmap, uv + vec2( 0.0, cellSize.y ) );
-		vec4 south = texture2D( heightmap, uv + vec2( 0.0, - cellSize.y ) );
-		vec4 east = texture2D( heightmap, uv + vec2( cellSize.x, 0.0 ) );
-		vec4 west = texture2D( heightmap, uv + vec2( - cellSize.x, 0.0 ) );
-		float newHeight = ( ( north.x + south.x + east.x + west.x ) * 0.5 - heightmapValue.y ) * viscosity;
-		float mousePhase = clamp( length( ( uv - vec2( 0.5 ) ) * BOUNDS - vec2( mousePos.x, -mousePos.y ) ) * PI / mouseSize, 0.0, PI );
-		newHeight -= ( cos( mousePhase ) + 1.0 ) * deep;
-		heightmapValue.y = heightmapValue.x;
-		heightmapValue.x = newHeight;
-		gl_FragColor = heightmapValue;
-	}
+  void main() {
+    vec2 cellSize = 1.0 / resolution.xy;
+    vec2 uv = gl_FragCoord.xy * cellSize;
+    vec4 heightmapValue = texture2D( heightmap, uv );
+    vec4 north = texture2D( heightmap, uv + vec2( 0.0, cellSize.y ) );
+    vec4 south = texture2D( heightmap, uv + vec2( 0.0, - cellSize.y ) );
+    vec4 east = texture2D( heightmap, uv + vec2( cellSize.x, 0.0 ) );
+    vec4 west = texture2D( heightmap, uv + vec2( - cellSize.x, 0.0 ) );
+    float newHeight = ( ( north.x + south.x + east.x + west.x ) * 0.5 - heightmapValue.y ) * viscosity;
+    float mousePhase = clamp( length( ( uv - vec2( 0.5 ) ) * BOUNDS - vec2( mousePos.x, -mousePos.y ) ) * PI / mouseSize, 0.0, PI );
+    newHeight -= ( cos( mousePhase ) + 1.0 ) * deep;
+    heightmapValue.y = heightmapValue.x;
+    heightmapValue.x = newHeight;
+    gl_FragColor = heightmapValue;
+  }
 `;
 
 const readWaterLevelFragmentShader = `
-	uniform vec2 point1;
-	uniform sampler2D levelTexture;
-	float shift_right( float v, float amt ) {
-		v = floor( v ) + 0.5;
-		return floor( v / exp2( amt ) );
-	}
-	float shift_left( float v, float amt ) {
-		return floor( v * exp2( amt ) + 0.5 );
-	}
-	float mask_last( float v, float bits ) {
-		return mod( v, shift_left( 1.0, bits ) );
-	}
-	float extract_bits( float num, float from, float to ) {
-		from = floor( from + 0.5 ); to = floor( to + 0.5 );
-		return mask_last( shift_right( num, from ), to - from );
-	}
-	vec4 encode_float( float val ) {
-		if ( val == 0.0 ) return vec4( 0, 0, 0, 0 );
-		float sign = val > 0.0 ? 0.0 : 1.0;
-		val = abs( val );
-		float exponent = floor( log2( val ) );
-		float biased_exponent = exponent + 127.0;
-		float fraction = ( ( val / exp2( exponent ) ) - 1.0 ) * 8388608.0;
-		float t = biased_exponent / 2.0;
-		float last_bit_of_biased_exponent = fract( t ) * 2.0;
-		float remaining_bits_of_biased_exponent = floor( t );
-		float byte4 = extract_bits( fraction, 0.0, 8.0 ) / 255.0;
-		float byte3 = extract_bits( fraction, 8.0, 16.0 ) / 255.0;
-		float byte2 = ( last_bit_of_biased_exponent * 128.0 + extract_bits( fraction, 16.0, 23.0 ) ) / 255.0;
-		float byte1 = ( sign * 128.0 + remaining_bits_of_biased_exponent ) / 255.0;
-		return vec4( byte4, byte3, byte2, byte1 );
-	}
-	void main()	{
-		float aCellSize = 1.0 / WIDTH;
-		float waterLevel = texture2D( levelTexture, point1 ).x;
-		vec2 normal = vec2(
-			( texture2D( levelTexture, point1 + vec2( -aCellSize, 0.0 ) ).x - texture2D( levelTexture, point1 + vec2( aCellSize, 0.0 ) ).x ) * WIDTH / BOUNDS,
-			( texture2D( levelTexture, point1 + vec2( 0.0, -aCellSize ) ).x - texture2D( levelTexture, point1 + vec2( 0.0, aCellSize ) ).x ) * WIDTH / BOUNDS
-		);
-		if ( gl_FragCoord.x < 1.5 ) {
-			gl_FragColor = encode_float( waterLevel );
-		} else if ( gl_FragCoord.x < 2.5 ) {
-			gl_FragColor = encode_float( normal.x );
-		} else if ( gl_FragCoord.x < 3.5 ) {
-			gl_FragColor = encode_float( normal.y );
-		} else {
-			gl_FragColor = encode_float( 0.0 );
-		}
-	}
+  uniform vec2 point1;
+  uniform sampler2D levelTexture;
+  float shift_right( float v, float amt ) {
+    v = floor( v ) + 0.5;
+    return floor( v / exp2( amt ) );
+  }
+  float shift_left( float v, float amt ) {
+    return floor( v * exp2( amt ) + 0.5 );
+  }
+  float mask_last( float v, float bits ) {
+    return mod( v, shift_left( 1.0, bits ) );
+  }
+  float extract_bits( float num, float from, float to ) {
+    from = floor( from + 0.5 ); to = floor( to + 0.5 );
+    return mask_last( shift_right( num, from ), to - from );
+  }
+  vec4 encode_float( float val ) {
+    if ( val == 0.0 ) return vec4( 0, 0, 0, 0 );
+    float sign = val > 0.0 ? 0.0 : 1.0;
+    val = abs( val );
+    float exponent = floor( log2( val ) );
+    float biased_exponent = exponent + 127.0;
+    float fraction = ( ( val / exp2( exponent ) ) - 1.0 ) * 8388608.0;
+    float t = biased_exponent / 2.0;
+    float last_bit_of_biased_exponent = fract( t ) * 2.0;
+    float remaining_bits_of_biased_exponent = floor( t );
+    float byte4 = extract_bits( fraction, 0.0, 8.0 ) / 255.0;
+    float byte3 = extract_bits( fraction, 8.0, 16.0 ) / 255.0;
+    float byte2 = ( last_bit_of_biased_exponent * 128.0 + extract_bits( fraction, 16.0, 23.0 ) ) / 255.0;
+    float byte1 = ( sign * 128.0 + remaining_bits_of_biased_exponent ) / 255.0;
+    return vec4( byte4, byte3, byte2, byte1 );
+  }
+  void main() {
+    float aCellSize = 1.0 / WIDTH;
+    float waterLevel = texture2D( levelTexture, point1 ).x;
+    vec2 normal = vec2(
+      ( texture2D( levelTexture, point1 + vec2( -aCellSize, 0.0 ) ).x - texture2D( levelTexture, point1 + vec2( aCellSize, 0.0 ) ).x ) * WIDTH / BOUNDS,
+      ( texture2D( levelTexture, point1 + vec2( 0.0, -aCellSize ) ).x - texture2D( levelTexture, point1 + vec2( 0.0, aCellSize ) ).x ) * WIDTH / BOUNDS
+    );
+    if ( gl_FragCoord.x < 1.5 ) {
+      gl_FragColor = encode_float( waterLevel );
+    } else if ( gl_FragCoord.x < 2.5 ) {
+      gl_FragColor = encode_float( normal.x );
+    } else if ( gl_FragCoord.x < 3.5 ) {
+      gl_FragColor = encode_float( normal.y );
+    } else {
+      gl_FragColor = encode_float( 0.0 );
+    }
+  }
 `;
 
 
@@ -200,6 +201,10 @@ function updateLoadingStatus(message) {
   loadingIndicator.innerText = message;
 }
 
+// 2. 创建并配置 DRACOLoader
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('/draco/'); // 确保 draco 文件夹在 public 目录下
+
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
   texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -214,7 +219,7 @@ function setupLayout(gltf) {
   layoutModel.traverse((child) => {
     if (child.isMesh) {
       child.castShadow = performanceSettings.shadows;
-      child.receiveShadow = performanceSettings.shadows;
+      child.receiveShadow = true;
     }
   });
   scene.add(layoutModel);
@@ -286,6 +291,7 @@ function setupDuck(gltf) {
 if (isMobile) {
   // 手机端：渐进式加载
   const gltfLoaderMobile = new GLTFLoader();
+  gltfLoaderMobile.setDRACOLoader(dracoLoader); // 3. 为手机加载器设置 Draco
   const textureLoaderMobile = new THREE.TextureLoader();
 
   function loadSkyMobile() {
@@ -327,7 +333,8 @@ if (isMobile) {
   // 电脑端：并行加载
   const desktopManager = new THREE.LoadingManager();
   const gltfLoaderDesktop = new GLTFLoader(desktopManager);
-  const rgbeLoaderDesktop = new RGBELoader(desktopManager); // 电脑端使用 RGBELoader
+  gltfLoaderDesktop.setDRACOLoader(dracoLoader); // 3. 为电脑加载器设置 Draco
+  const rgbeLoaderDesktop = new RGBELoader(desktopManager);
 
   desktopManager.onLoad = () => {
     loadingIndicator.style.display = 'none';
@@ -349,7 +356,7 @@ if (isMobile) {
 // =================================================================
 // 舞台美术：环境、雾气、光照
 // =================================================================
-scene.background = new THREE.Color(0x1a2b3b); // 设置一个临时的纯色背景
+scene.background = new THREE.Color(0x1a2b3b);
 scene.fog = new THREE.Fog(0x4a708e, 400, 600);
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
 scene.add(ambientLight);
@@ -418,20 +425,20 @@ function initWater() {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <beginnormal_vertex>',
         `
-              vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
-              vec3 objectNormal = vec3(
-                  ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                  ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                  1.0
-              );
-              `
+                  vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
+                  vec3 objectNormal = vec3(
+                      ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                      ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                      1.0
+                  );
+                  `
       );
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `
-              float heightValue = texture2D( heightmap, uv ).x;
-              vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
-              `
+                  float heightValue = texture2D( heightmap, uv ).x;
+                  vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
+                  `
       );
       material.userData.shader = shader;
     };
@@ -656,11 +663,13 @@ function updateKirbyMovement(deltaTime) {
     kirbyVerticalVelocity = 0;
   }
 
-  animationMixer.update(deltaTime);
+  if (animationMixer) {
+    animationMixer.update(deltaTime);
+  }
 }
 
 function updateCamera() {
-  if (!isReady || !kirbyModel) return;
+  if (!isReady) return;
 
   if (isWaterMode) {
     camera.position.lerp(WATER_CAMERA_POSITION, 0.05);
@@ -668,6 +677,8 @@ function updateCamera() {
     camera.lookAt(cameraTargetPosition);
     return;
   }
+
+  if (!kirbyModel) return;
 
   cameraYaw = THREE.MathUtils.lerp(cameraYaw, targetCameraYaw, 0.1);
   cameraPitch = THREE.MathUtils.lerp(cameraPitch, targetCameraPitch, 0.1);
@@ -924,7 +935,7 @@ const iconMusicOn = document.getElementById('icon-music-on');
 const iconMusicOff = document.getElementById('icon-music-off');
 
 const unlockAudio = () => {
-  bgMusic.play().then(() => bgMusic.pause()).catch(e => { });
+  bgMusic.play().then(() => bgMusic.pause()).catch(e => { /* Mute AbortError */ });
 };
 document.body.addEventListener('pointerdown', unlockAudio, { once: true });
 
@@ -1002,10 +1013,10 @@ document.addEventListener('pointerdown', (event) => {
       initGameUI();
     } else if (clickedButton.name === 'waterButton') {
       isWaterMode = !isWaterMode;
-      kirbyModel.visible = !isWaterMode;
+      if (kirbyModel) kirbyModel.visible = !isWaterMode;
       joystick.style.display = isWaterMode ? 'none' : 'flex';
       jumpButton.style.display = isWaterMode ? 'none' : 'block';
-      if (!isWaterMode) {
+      if (!isWaterMode && kirbyModel) {
         cameraTargetPosition.copy(kirbyModel.position);
       }
     }
@@ -1117,7 +1128,7 @@ function animate() {
 
   if (performanceSettings.enableGPGPU) {
     frame++;
-    if (frame >= 7 - 4) {
+    if (frame >= 3) {
       if (gpuCompute && waterMesh && waterMesh.material.userData.shader) {
         gpuCompute.compute();
         const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
@@ -1140,13 +1151,15 @@ function animate() {
     }
     updateKirbyMovement(deltaTime);
     updateCamera();
+  } else {
+    // 即使资源未就绪，也更新相机以允许交互
+    updateCamera();
   }
+
 
   renderer.render(scene, camera);
 }
 
-// 移除错误的启动调用
-// loadLayout(); 
 animate();
 
 window.addEventListener('resize', () => {
