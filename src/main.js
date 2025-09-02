@@ -1,4 +1,9 @@
-// 这是修改后的main.js文件，采用全局引入方式，以确保在手机上正常运行。
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
+
 // =================================================================
 // 初始化基础组件
 // =================================================================
