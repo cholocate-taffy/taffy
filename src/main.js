@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'; // 1. 引入 DRACOLoader
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
@@ -22,10 +22,10 @@ document.head.appendChild(style);
 const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 const performanceSettings = {
-  pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
+  pixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio, 2), // 手机端像素比降至 1
   gpgpuWidth: isMobile ? 32 : 128,
-  numDucks: isMobile ? 1 : 7,
-  shadows: !isMobile,
+  numDucks: isMobile ? 0 : 7, // 手机端默认不加载鸭子
+  shadows: false, // 所有设备默认禁用阴影以获得最佳性能
   enableGPGPU: !isMobile
 };
 
@@ -35,7 +35,7 @@ const performanceSettings = {
 const assetPaths = {
   layout: isMobile ? '布局_mobile.glb' : '布局.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
-  duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
+  duck: 'Duck_mobile.glb', // 统一使用 mobile 版
   sky: isMobile ? 'mysky.webp' : 'mysky.hdr'
 };
 
@@ -50,7 +50,7 @@ scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({
   canvas: document.querySelector('#webgl-canvas'),
-  antialias: true
+  antialias: !isMobile // 手机端禁用抗锯齿
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(performanceSettings.pixelRatio);
@@ -138,7 +138,6 @@ const readWaterLevelFragmentShader = `
   }
 `;
 
-
 let waterMesh, meshRay, gpuCompute, heightmapVariable;
 let duckModel, readWaterLevelShader, readWaterLevelRenderTarget, readWaterLevelImage;
 const ducks = [];
@@ -165,13 +164,11 @@ let isDoorAnimationPlaying = false;
 let isWinLoseAnimationPlaying = false;
 const simplex = new SimplexNoise();
 let frame = 0;
-
 let isReady = false;
 const cameraTargetPosition = new THREE.Vector3();
 let isWaterMode = false;
 const WATER_CAMERA_POSITION = new THREE.Vector3(57, 15, -115);
 const WATER_CAMERA_LOOKAT = new THREE.Vector3(57, -19, -144);
-
 const tmpQuat = new THREE.Quaternion();
 const tmpQuatX = new THREE.Quaternion();
 const tmpQuatZ = new THREE.Quaternion();
@@ -181,29 +178,42 @@ const zAxis = new THREE.Vector3(0, 0, -1);
 // =================================================================
 // 资源加载逻辑 (Asset Loading Logic)
 // =================================================================
-const loadingIndicator = document.createElement('div');
-loadingIndicator.style.position = 'fixed';
-loadingIndicator.style.top = '50%';
-loadingIndicator.style.left = '50%';
-loadingIndicator.style.transform = 'translate(-50%, -50%)';
-loadingIndicator.style.color = 'white';
-loadingIndicator.style.fontSize = '20px';
-loadingIndicator.style.fontFamily = 'sans-serif';
-loadingIndicator.innerText = '正在加载...';
-document.body.appendChild(loadingIndicator);
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingBar = document.getElementById('loading-bar');
+const loadingText = document.getElementById('loading-text');
 
-const onErrorLoading = (error) => {
-  console.error('An error happened during asset loading:', error.message || error);
-  loadingIndicator.innerHTML = '资源加载失败<br>请尝试刷新页面。';
+const loadingManager = new THREE.LoadingManager();
+
+loadingManager.onProgress = function (url, itemsLoaded, itemsTotal) {
+  const progress = (itemsLoaded / itemsTotal);
+  loadingBar.style.width = progress * 100 + '%';
+  loadingText.textContent = `加载中... ${Math.round(progress * 100)}%`;
 };
 
-function updateLoadingStatus(message) {
-  loadingIndicator.innerText = message;
-}
+loadingManager.onLoad = function () {
+  setTimeout(() => {
+    loadingOverlay.style.opacity = '0';
+    setTimeout(() => {
+      loadingOverlay.style.display = 'none';
+      isReady = true;
+    }, 500);
+  }, 300);
+};
 
-// 2. 创建并配置 DRACOLoader
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('/draco/'); // 确保 draco 文件夹在 public 目录下
+loadingManager.onError = function (url) {
+  console.error('加载资源时发生错误: ' + url);
+  loadingText.textContent = `加载失败，请刷新重试。`;
+};
+
+const dracoLoader = new DRACOLoader(loadingManager); // 将 manager 传入
+dracoLoader.setDecoderPath('/taffy/draco/'); // 使用修正后的绝对路径
+
+const gltfLoader = new GLTFLoader(loadingManager);
+gltfLoader.setDRACOLoader(dracoLoader);
+
+const rgbeLoader = new RGBELoader(loadingManager);
+const textureLoader = new THREE.TextureLoader(loadingManager);
+
 
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
@@ -286,72 +296,24 @@ function setupDuck(gltf) {
   createDucks();
 }
 
-
-// --- 条件加载逻辑 (Conditional Loading Logic) ---
-if (isMobile) {
-  // 手机端：渐进式加载
-  const gltfLoaderMobile = new GLTFLoader();
-  gltfLoaderMobile.setDRACOLoader(dracoLoader); // 3. 为手机加载器设置 Draco
-  const textureLoaderMobile = new THREE.TextureLoader();
-
-  function loadSkyMobile() {
-    updateLoadingStatus('加载天空...');
-    textureLoaderMobile.load(assetPaths.sky, (texture) => {
-      setupSky(texture);
-      loadingIndicator.style.display = 'none';
-      isReady = true;
-    }, undefined, onErrorLoading);
+// --- 统一加载逻辑 ---
+function startLoading() {
+  if (isMobile) {
+    textureLoader.load(assetPaths.sky, setupSky);
+  } else {
+    rgbeLoader.load(assetPaths.sky, setupSky);
   }
 
-  function loadDucksMobile() {
-    updateLoadingStatus('加载小鸭子...');
-    gltfLoaderMobile.load(assetPaths.duck, (gltf) => {
-      setupDuck(gltf);
-      loadSkyMobile();
-    }, undefined, onErrorLoading);
+  gltfLoader.load(assetPaths.layout, setupLayout);
+  gltfLoader.load(assetPaths.kirby, setupKirby);
+
+  // 手机端不加载鸭子
+  if (!isMobile) {
+    gltfLoader.load(assetPaths.duck, setupDuck);
   }
-
-  function loadKirbyMobile() {
-    updateLoadingStatus('加载卡比...');
-    gltfLoaderMobile.load(assetPaths.kirby, (gltf) => {
-      setupKirby(gltf);
-      loadDucksMobile();
-    }, undefined, onErrorLoading);
-  }
-
-  function loadLayoutMobile() {
-    updateLoadingStatus('加载场景...');
-    gltfLoaderMobile.load(assetPaths.layout, (gltf) => {
-      setupLayout(gltf);
-      loadKirbyMobile();
-    }, undefined, onErrorLoading);
-  }
-
-  loadLayoutMobile(); // 启动手机端加载链
-
-} else {
-  // 电脑端：并行加载
-  const desktopManager = new THREE.LoadingManager();
-  const gltfLoaderDesktop = new GLTFLoader(desktopManager);
-  gltfLoaderDesktop.setDRACOLoader(dracoLoader); // 3. 为电脑加载器设置 Draco
-  const rgbeLoaderDesktop = new RGBELoader(desktopManager);
-
-  desktopManager.onLoad = () => {
-    loadingIndicator.style.display = 'none';
-    isReady = true;
-  };
-  desktopManager.onError = (url) => {
-    console.error('Error loading:', url);
-    onErrorLoading({ message: `Failed to load ${url}` });
-  };
-
-  updateLoadingStatus('正在加载...');
-
-  rgbeLoaderDesktop.load(assetPaths.sky, setupSky, undefined, onErrorLoading);
-  gltfLoaderDesktop.load(assetPaths.layout, setupLayout, undefined, onErrorLoading);
-  gltfLoaderDesktop.load(assetPaths.kirby, setupKirby, undefined, onErrorLoading);
-  gltfLoaderDesktop.load(assetPaths.duck, setupDuck, undefined, onErrorLoading);
 }
+
+startLoading();
 
 // =================================================================
 // 舞台美术：环境、雾气、光照
@@ -669,8 +631,6 @@ function updateKirbyMovement(deltaTime) {
 }
 
 function updateCamera() {
-  if (!isReady) return;
-
   if (isWaterMode) {
     camera.position.lerp(WATER_CAMERA_POSITION, 0.05);
     cameraTargetPosition.lerp(WATER_CAMERA_LOOKAT, 0.05);
@@ -678,7 +638,9 @@ function updateCamera() {
     return;
   }
 
-  if (!kirbyModel) return;
+  if (isReady && kirbyModel) {
+    cameraTargetPosition.lerp(kirbyModel.position, 0.08);
+  }
 
   cameraYaw = THREE.MathUtils.lerp(cameraYaw, targetCameraYaw, 0.1);
   cameraPitch = THREE.MathUtils.lerp(cameraPitch, targetCameraPitch, 0.1);
@@ -710,7 +672,7 @@ function createDucks() {
 }
 
 function duckDynamics() {
-  if (!performanceSettings.enableGPGPU) return;
+  if (!performanceSettings.enableGPGPU || !gpuCompute) return;
   const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
   readWaterLevelShader.uniforms['levelTexture'].value = heightmapTexture;
 
@@ -1145,15 +1107,10 @@ function animate() {
     layoutMixer.update(deltaTime);
   }
 
+  updateCamera();
+
   if (isReady) {
-    if (kirbyModel && !isWaterMode) {
-      cameraTargetPosition.lerp(kirbyModel.position, 0.08);
-    }
     updateKirbyMovement(deltaTime);
-    updateCamera();
-  } else {
-    // 即使资源未就绪，也更新相机以允许交互
-    updateCamera();
   }
 
 
