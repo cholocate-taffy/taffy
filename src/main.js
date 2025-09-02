@@ -24,18 +24,17 @@ const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
   gpgpuWidth: isMobile ? 32 : 128,
-  // --- 修改：将手机端的小鸭子数量改为 3 ---
   numDucks: isMobile ? 3 : 7,
   shadows: !isMobile,
-  // --- 修改：在所有设备上都启用 GPGPU 水面特效 ---
   enableGPGPU: true
 };
 
 // =================================================================
 // 条件资源路径 (Conditional Asset Paths)
 // =================================================================
+// --- 修改：为电脑版 layout 模型使用明确的新文件名，以解决大小写问题 ---
 const assetPaths = {
-  layout: isMobile ? 'layout_mobile.glb' : 'layout.glb',
+  layout: isMobile ? 'layout_mobile.glb' : 'layout_desktop.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
   sky: isMobile ? 'mysky.webp' : 'mysky.hdr'
