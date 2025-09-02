@@ -300,7 +300,7 @@ const controlParams = {
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
   mouseSensitivity: 0.0023,
-  touchSensitivity: 0.015 // 再次提高触摸灵敏度
+  touchSensitivity: 0.015
 };
 
 const cameraParams = {
@@ -325,7 +325,8 @@ let orbitPointerId = null;
 let joystickStart = new THREE.Vector2();
 let joystickCurrent = new THREE.Vector2();
 
-
+// 全局指针管理 (用于缩放)
+const activePointers = new Map();
 let isPinching = false;
 let lastPinchDistance = 0;
 
@@ -360,7 +361,6 @@ const joystick = document.getElementById('joystick');
 const joystickKnob = document.getElementById('joystick-knob');
 const jumpButton = document.getElementById('jump-button');
 
-// 将跳跃按钮事件改为 pointerdown
 jumpButton.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   jump();
@@ -425,7 +425,6 @@ function updateKirbyMovement(deltaTime) {
   if (isMoving) {
     if (activeAction !== kirbyActions.run) fadeToAction('run', 0.2);
     let pressDuration = 0;
-    // 检查 joystickPointerId 是否不为 null 来判断摇杆是否激活
     if (joystickPointerId !== null) {
       pressDuration = Date.now() - joystickStartTime;
     } else {
@@ -443,7 +442,6 @@ function updateKirbyMovement(deltaTime) {
   downRaycaster.set(downOrigin, new THREE.Vector3(0, -1, 0));
   const groundIntersects = downRaycaster.intersectObject(layoutModel, true);
 
-  // 增大地面检测容错距离
   const onGround = groundIntersects.length > 0 && groundIntersects[0].distance < 1.5;
 
   if (onGround) {
@@ -890,9 +888,23 @@ bgMusic.onpause = () => {
 // =================================================================
 document.addEventListener('pointerdown', (event) => {
   // 忽略 UI 元素上的点击
-  if (event.target.closest('#music-control') || gameOverlay.classList.contains('visible') && !event.target.closest('#game-content')) {
+  if (event.target.closest('#music-control') || (gameOverlay.classList.contains('visible') && !event.target.closest('#game-content'))) {
     return;
   }
+
+  // 将指针添加到活动列表
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  // 检查是否开始缩放
+  if (activePointers.size === 2) {
+    isPinching = true;
+    orbitPointerId = null; // 缩放时停止视角转动
+    const pointers = Array.from(activePointers.values());
+    const dx = pointers[0].x - pointers[1].x;
+    const dy = pointers[0].y - pointers[1].y;
+    lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
+  }
+
 
   // 处理摇杆
   if (event.target.closest('#joystick')) {
@@ -967,6 +979,27 @@ document.addEventListener('pointermove', (event) => {
     return; // 摇杆移动时，不执行其他移动逻辑
   }
 
+  // 更新活动指针位置
+  if (activePointers.has(event.pointerId)) {
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  }
+
+  // 处理缩放
+  if (isPinching && activePointers.size === 2) {
+    const pointers = Array.from(activePointers.values());
+    const dx = pointers[0].x - pointers[1].x;
+    const dy = pointers[0].y - pointers[1].y;
+    const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
+    const deltaDistance = lastPinchDistance - currentPinchDistance;
+
+    cameraParams.distance += deltaDistance * 0.25;
+    cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
+
+    lastPinchDistance = currentPinchDistance;
+    return; // 缩放时不做其他操作
+  }
+
+
   // 处理视角转动
   if (event.pointerId === orbitPointerId && !isWaterMode) {
     const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
@@ -991,6 +1024,12 @@ document.addEventListener('pointermove', (event) => {
 });
 
 const onPointerUp = (event) => {
+  activePointers.delete(event.pointerId);
+
+  if (activePointers.size < 2) {
+    isPinching = false;
+  }
+
   // 处理摇杆手指抬起
   if (event.pointerId === joystickPointerId) {
     joystickPointerId = null;
@@ -1023,36 +1062,11 @@ document.addEventListener('wheel', (event) => {
   cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
 });
 
-document.addEventListener('touchstart', (event) => {
-  if (event.touches.length === 2) {
-    isPinching = true;
-    orbitPointerId = null; // 缩放时禁止转动
-    const dx = event.touches[0].clientX - event.touches[1].clientX;
-    const dy = event.touches[0].clientY - event.touches[1].clientY;
-    lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
-  }
-}, { passive: false });
+// 移除旧的 touch 事件监听器
+// document.addEventListener('touchstart', ...);
+// document.addEventListener('touchmove', ...);
+// document.addEventListener('touchend', ...);
 
-document.addEventListener('touchmove', (event) => {
-  if (isPinching && event.touches.length === 2) {
-    event.preventDefault();
-    const dx = event.touches[0].clientX - event.touches[1].clientX;
-    const dy = event.touches[0].clientY - event.touches[1].clientY;
-    const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
-    const deltaDistance = lastPinchDistance - currentPinchDistance;
-
-    cameraParams.distance += deltaDistance * 0.25;
-    cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
-
-    lastPinchDistance = currentPinchDistance;
-  }
-}, { passive: false });
-
-document.addEventListener('touchend', (event) => {
-  if (event.touches.length < 2) {
-    isPinching = false;
-  }
-});
 
 function animate() {
   requestAnimationFrame(animate);
