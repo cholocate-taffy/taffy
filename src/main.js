@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+//移除了RGBELoader，因为它不再需要
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
 // =================================================================
@@ -22,9 +22,10 @@ const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 const performanceSettings = {
   pixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio, 2),
-  gpgpuWidth: isMobile ? 64 : 128,
-  numDucks: isMobile ? 3 : 7,
-  shadows: !isMobile // 手机端默认禁用阴影以提升性能
+  gpgpuWidth: isMobile ? 32 : 128, // 在手机上进一步降低GPGPU分辨率
+  numDucks: isMobile ? 1 : 7, // 在手机上进一步减少鸭子数量
+  shadows: false, // 对所有设备禁用阴影以获得最大性能
+  enableGPGPU: !isMobile // 仅在非手机设备上开启水面模拟
 };
 
 // =================================================================
@@ -165,36 +166,136 @@ const tmpQuatZ = new THREE.Quaternion();
 const yAxis = new THREE.Vector3(0, 1, 0);
 const zAxis = new THREE.Vector3(0, 0, -1);
 
-const loadingManager = new THREE.LoadingManager();
-const gltfLoader = new GLTFLoader(loadingManager);
-const rgbeLoader = new RGBELoader(loadingManager);
+// =================================================================
+// 渐进式加载逻辑 (Progressive Loading Logic)
+// =================================================================
+const loadingIndicator = document.createElement('div');
+loadingIndicator.style.position = 'fixed';
+loadingIndicator.style.top = '50%';
+loadingIndicator.style.left = '50%';
+loadingIndicator.style.transform = 'translate(-50%, -50%)';
+loadingIndicator.style.color = 'white';
+loadingIndicator.style.fontSize = '20px';
+loadingIndicator.style.fontFamily = 'sans-serif';
+loadingIndicator.innerText = '正在加载...';
+document.body.appendChild(loadingIndicator);
+
+const gltfLoader = new GLTFLoader();
+const textureLoader = new THREE.TextureLoader();
 
 const onErrorLoading = (error) => {
-  console.error('An error happened during asset loading:', error);
-  // 可以在此处向用户显示一条友好的错误消息
-  const errorPanel = document.createElement('div');
-  errorPanel.style.position = 'fixed';
-  errorPanel.style.top = '50%';
-  errorPanel.style.left = '50%';
-  errorPanel.style.transform = 'translate(-50%, -50%)';
-  errorPanel.style.color = 'white';
-  errorPanel.style.backgroundColor = 'rgba(0,0,0,0.7)';
-  errorPanel.style.padding = '20px';
-  errorPanel.style.borderRadius = '10px';
-  errorPanel.innerHTML = '资源加载失败<br>请尝试刷新页面或更换网络环境。';
-  document.body.appendChild(errorPanel);
+  console.error('An error happened during asset loading:', error.message || error);
+  loadingIndicator.innerHTML = '资源加载失败<br>请尝试刷新页面。';
 };
 
+function loadSky() {
+  updateLoadingStatus('加载天空...');
+  textureLoader.load('mysky_optimized.jpg', (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = texture;
+    scene.environment = texture;
+    loadingIndicator.style.display = 'none'; // 全部加载完成，隐藏提示
+    isReady = true; // 允许开始交互
+  }, undefined, onErrorLoading);
+}
+
+function loadDucks() {
+  updateLoadingStatus('加载小鸭子...');
+  gltfLoader.load('Duck.glb', (gltf) => {
+    duckModel = gltf.scene;
+    duckModel.scale.set(0.022, 0.022, 0.022);
+    duckModel.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow = performanceSettings.shadows;
+      }
+    });
+    createDucks();
+    loadSky(); // 加载天空
+  }, undefined, onErrorLoading);
+}
+
+function loadKirby() {
+  updateLoadingStatus('加载卡比...');
+  gltfLoader.load('kirby.glb', (gltf) => {
+    kirbyModel = gltf.scene;
+    kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
+    kirbyModel.rotation.y = 4.91;
+    kirbyModel.scale.set(2.5, 2.5, 2.5);
+    kirbyModel.traverse((child) => {
+      if (child.isMesh) child.castShadow = performanceSettings.shadows;
+    });
+    scene.add(kirbyModel);
+
+    cameraTargetPosition.copy(kirbyModel.position);
+
+    animationMixer = new THREE.AnimationMixer(kirbyModel);
+    const idleClip = THREE.AnimationClip.findByName(gltf.animations, 'idle');
+    const runClip = THREE.AnimationClip.findByName(gltf.animations, 'run');
+
+    if (idleClip) {
+      kirbyActions.idle = animationMixer.clipAction(idleClip);
+      activeAction = kirbyActions.idle;
+      activeAction.play();
+    }
+    if (runClip) kirbyActions.run = animationMixer.clipAction(runClip);
+
+    loadDucks(); // 加载鸭子
+  }, undefined, onErrorLoading);
+}
+
+function loadLayout() {
+  updateLoadingStatus('加载场景...');
+  gltfLoader.load('布局.glb', (gltf) => {
+    layoutModel = gltf.scene;
+    layoutModel.position.set(0, 0, 0);
+    layoutModel.scale.set(3.5, 3.5, 3.5);
+    layoutModel.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = performanceSettings.shadows;
+        child.receiveShadow = performanceSettings.shadows;
+      }
+    });
+    scene.add(layoutModel);
+
+    layoutMixer = new THREE.AnimationMixer(layoutModel);
+    const openClip = THREE.AnimationClip.findByName(gltf.animations, 'open');
+    const winClip = THREE.AnimationClip.findByName(gltf.animations, 'win');
+    const loseClip = THREE.AnimationClip.findByName(gltf.animations, 'lose');
+
+    if (openClip) { openAction = layoutMixer.clipAction(openClip); openAction.setLoop(THREE.LoopOnce); openAction.clampWhenFinished = true; }
+    if (winClip) { winAction = layoutMixer.clipAction(winClip); winAction.setLoop(THREE.LoopOnce); winAction.clampWhenFinished = true; }
+    if (loseClip) { loseAction = layoutMixer.clipAction(loseClip); loseAction.setLoop(THREE.LoopOnce); loseAction.clampWhenFinished = true; }
+
+    layoutMixer.addEventListener('finished', (e) => {
+      if (e.action === openAction) isDoorAnimationPlaying = false;
+      if (e.action === winAction || e.action === loseAction) {
+        if (e.action.timeScale > 0) {
+          e.action.paused = false; e.action.setLoop(THREE.LoopOnce); e.action.timeScale = -1; e.action.play();
+        } else {
+          e.action.stop(); e.action.timeScale = 1; isWinLoseAnimationPlaying = false;
+        }
+      }
+    });
+
+    // ... (按钮创建逻辑不变)
+    const buttonGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
+    const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+    doorButton = new THREE.Mesh(buttonGeometry, buttonMaterial); doorButton.name = 'doorButton'; doorButton.position.set(-79.4, -14, -7.4); doorButton.rotation.z = 1.63; doorButton.scale.set(1.5, 1.5, 1.5); scene.add(doorButton); interactiveButtons.push(doorButton);
+    treeButton = new THREE.Mesh(buttonGeometry, buttonMaterial); treeButton.name = 'treeButton'; treeButton.position.set(20, -25, 95); treeButton.scale.set(4, 4, 4); scene.add(treeButton); interactiveButtons.push(treeButton);
+    waterButton = new THREE.Mesh(buttonGeometry, buttonMaterial); waterButton.name = 'waterButton'; waterButton.position.set(84, -14.5, -120); waterButton.rotation.set(Math.PI, Math.PI, 1.74); waterButton.scale.set(2.5, 2.5, 2.5); scene.add(waterButton); interactiveButtons.push(waterButton);
+
+    loadKirby(); // 加载卡比
+  }, undefined, onErrorLoading);
+}
+
+function updateLoadingStatus(message) {
+  loadingIndicator.innerText = message;
+}
 
 // =================================================================
 // 舞台美术：环境、雾气、光照
 // =================================================================
-rgbeLoader.load('mysky.hdr', (texture) => {
-  texture.mapping = THREE.EquirectangularReflectionMapping;
-  scene.background = texture;
-  scene.environment = texture;
-}, undefined, onErrorLoading);
-
+scene.background = new THREE.Color(0x1a2b3b); // 设置一个临时的纯色背景
 scene.fog = new THREE.Fog(0x4a708e, 400, 600);
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
 scene.add(ambientLight);
@@ -255,30 +356,32 @@ function initWater() {
     opacity: waterParams.opacity
   });
 
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.heightmap = { value: null };
+  if (performanceSettings.enableGPGPU) {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.heightmap = { value: null };
 
-    shader.vertexShader = 'uniform sampler2D heightmap;\n' + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <beginnormal_vertex>',
-      `
-            vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
-            vec3 objectNormal = vec3(
-                ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
-                1.0
-            );
-            `
-    );
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `
-            float heightValue = texture2D( heightmap, uv ).x;
-            vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
-            `
-    );
-    material.userData.shader = shader;
-  };
+      shader.vertexShader = 'uniform sampler2D heightmap;\n' + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <beginnormal_vertex>',
+        `
+              vec2 cellSize = vec2( 1.0 / ${WIDTH.toFixed(1)}, 1.0 / ${WIDTH.toFixed(1)} );
+              vec3 objectNormal = vec3(
+                  ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                  ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * ${WIDTH.toFixed(1)} / ${BOUNDS.toFixed(1)},
+                  1.0
+              );
+              `
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `
+              float heightValue = texture2D( heightmap, uv ).x;
+              vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
+              `
+      );
+      material.userData.shader = shader;
+    };
+  }
 
   waterMesh = new THREE.Mesh(geometry, material);
   waterMesh.rotation.x = -Math.PI / 2;
@@ -294,40 +397,42 @@ function initWater() {
   meshRay.position.copy(waterMesh.position);
   scene.add(meshRay);
 
-  gpuCompute = new GPUComputationRenderer(WIDTH, WIDTH, renderer);
+  if (performanceSettings.enableGPGPU) {
+    gpuCompute = new GPUComputationRenderer(WIDTH, WIDTH, renderer);
 
-  const heightmap0 = gpuCompute.createTexture();
-  fillTexture(heightmap0);
+    const heightmap0 = gpuCompute.createTexture();
+    fillTexture(heightmap0);
 
-  heightmapVariable = gpuCompute.addVariable('heightmap', heightmapFragmentShader, heightmap0);
-  gpuCompute.setVariableDependencies(heightmapVariable, [heightmapVariable]);
+    heightmapVariable = gpuCompute.addVariable('heightmap', heightmapFragmentShader, heightmap0);
+    gpuCompute.setVariableDependencies(heightmapVariable, [heightmapVariable]);
 
-  heightmapVariable.material.uniforms['mousePos'] = { value: new THREE.Vector2(10000, 10000) };
-  heightmapVariable.material.uniforms['mouseSize'] = { value: 1.91 };
-  heightmapVariable.material.uniforms['viscosity'] = { value: 0.98 };
-  heightmapVariable.material.uniforms['deep'] = { value: 0.078 };
-  heightmapVariable.material.defines.BOUNDS = BOUNDS.toFixed(1);
+    heightmapVariable.material.uniforms['mousePos'] = { value: new THREE.Vector2(10000, 10000) };
+    heightmapVariable.material.uniforms['mouseSize'] = { value: 1.91 };
+    heightmapVariable.material.uniforms['viscosity'] = { value: 0.98 };
+    heightmapVariable.material.uniforms['deep'] = { value: 0.078 };
+    heightmapVariable.material.defines.BOUNDS = BOUNDS.toFixed(1);
 
-  const error = gpuCompute.init();
-  if (error !== null) console.error(error);
+    const error = gpuCompute.init();
+    if (error !== null) console.error(error);
 
-  readWaterLevelShader = gpuCompute.createShaderMaterial(readWaterLevelFragmentShader, {
-    point1: { value: new THREE.Vector2() },
-    levelTexture: { value: null }
-  });
-  readWaterLevelShader.defines.WIDTH = WIDTH.toFixed(1);
-  readWaterLevelShader.defines.BOUNDS = BOUNDS.toFixed(1);
+    readWaterLevelShader = gpuCompute.createShaderMaterial(readWaterLevelFragmentShader, {
+      point1: { value: new THREE.Vector2() },
+      levelTexture: { value: null }
+    });
+    readWaterLevelShader.defines.WIDTH = WIDTH.toFixed(1);
+    readWaterLevelShader.defines.BOUNDS = BOUNDS.toFixed(1);
 
-  readWaterLevelImage = new Uint8Array(4 * 1 * 4);
-  readWaterLevelRenderTarget = new THREE.WebGLRenderTarget(4, 1, {
-    wrapS: THREE.ClampToEdgeWrapping,
-    wrapT: THREE.ClampToEdgeWrapping,
-    minFilter: THREE.NearestFilter,
-    magFilter: THREE.NearestFilter,
-    format: THREE.RGBAFormat,
-    type: THREE.UnsignedByteType,
-    depthBuffer: false
-  });
+    readWaterLevelImage = new Uint8Array(4 * 1 * 4);
+    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget(4, 1, {
+      wrapS: THREE.ClampToEdgeWrapping,
+      wrapT: THREE.ClampToEdgeWrapping,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      depthBuffer: false
+    });
+  }
 }
 
 initWater();
@@ -527,122 +632,6 @@ function updateCamera() {
   camera.lookAt(lookAtPoint);
 }
 
-
-gltfLoader.load('布局.glb', (gltf) => {
-  layoutModel = gltf.scene;
-  layoutModel.position.set(0, 0, 0);
-  layoutModel.scale.set(3.5, 3.5, 3.5);
-  layoutModel.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = performanceSettings.shadows;
-      child.receiveShadow = performanceSettings.shadows;
-    }
-  });
-  scene.add(layoutModel);
-
-  layoutMixer = new THREE.AnimationMixer(layoutModel);
-  const openClip = THREE.AnimationClip.findByName(gltf.animations, 'open');
-  const winClip = THREE.AnimationClip.findByName(gltf.animations, 'win');
-  const loseClip = THREE.AnimationClip.findByName(gltf.animations, 'lose');
-
-  if (openClip) {
-    openAction = layoutMixer.clipAction(openClip);
-    openAction.setLoop(THREE.LoopOnce);
-    openAction.clampWhenFinished = true;
-  }
-  if (winClip) {
-    winAction = layoutMixer.clipAction(winClip);
-    winAction.setLoop(THREE.LoopOnce);
-    winAction.clampWhenFinished = true;
-  }
-  if (loseClip) {
-    loseAction = layoutMixer.clipAction(loseClip);
-    loseAction.setLoop(THREE.LoopOnce);
-    loseAction.clampWhenFinished = true;
-  }
-
-  layoutMixer.addEventListener('finished', (e) => {
-    if (e.action === openAction) isDoorAnimationPlaying = false;
-    if (e.action === winAction || e.action === loseAction) {
-      if (e.action.timeScale > 0) {
-        e.action.paused = false;
-        e.action.setLoop(THREE.LoopOnce);
-        e.action.timeScale = -1;
-        e.action.play();
-      } else {
-        e.action.stop();
-        e.action.timeScale = 1;
-        isWinLoseAnimationPlaying = false;
-      }
-    }
-  });
-
-  const buttonGeometry = new THREE.CylinderGeometry(1, 1, 0.5, 32);
-  const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
-
-  doorButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-  doorButton.name = 'doorButton';
-  doorButton.position.set(-79.4, -14, -7.4);
-  doorButton.rotation.z = 1.63;
-  doorButton.scale.set(1.5, 1.5, 1.5);
-  scene.add(doorButton);
-  interactiveButtons.push(doorButton);
-
-  treeButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-  treeButton.name = 'treeButton';
-  treeButton.position.set(20, -25, 95);
-  treeButton.scale.set(4, 4, 4);
-  scene.add(treeButton);
-  interactiveButtons.push(treeButton);
-
-  waterButton = new THREE.Mesh(buttonGeometry, buttonMaterial);
-  waterButton.name = 'waterButton';
-  waterButton.position.set(84, -14.5, -120);
-  waterButton.rotation.set(Math.PI, Math.PI, 1.74);
-  waterButton.scale.set(2.5, 2.5, 2.5);
-  scene.add(waterButton);
-  interactiveButtons.push(waterButton);
-
-  if (kirbyModel) isReady = true;
-}, undefined, onErrorLoading);
-
-gltfLoader.load('kirby.glb', (gltf) => {
-  kirbyModel = gltf.scene;
-  kirbyModel.position.copy(KIRBY_INITIAL_POSITION);
-  kirbyModel.rotation.y = 4.91;
-  kirbyModel.scale.set(2.5, 2.5, 2.5);
-  kirbyModel.traverse((child) => {
-    if (child.isMesh) child.castShadow = performanceSettings.shadows;
-  });
-  scene.add(kirbyModel);
-
-  cameraTargetPosition.copy(kirbyModel.position);
-
-  animationMixer = new THREE.AnimationMixer(kirbyModel);
-  const idleClip = THREE.AnimationClip.findByName(gltf.animations, 'idle');
-  const runClip = THREE.AnimationClip.findByName(gltf.animations, 'run');
-
-  if (idleClip) {
-    kirbyActions.idle = animationMixer.clipAction(idleClip);
-    activeAction = kirbyActions.idle;
-    activeAction.play();
-  }
-  if (runClip) kirbyActions.run = animationMixer.clipAction(runClip);
-
-  if (layoutModel) isReady = true;
-}, undefined, onErrorLoading);
-
-gltfLoader.load('Duck.glb', (gltf) => {
-  duckModel = gltf.scene;
-  duckModel.scale.set(0.022, 0.022, 0.022);
-  duckModel.traverse(child => {
-    if (child.isMesh) {
-      child.castShadow = performanceSettings.shadows;
-    }
-  });
-  createDucks();
-}, undefined, onErrorLoading);
-
 function createDucks() {
   for (let i = 0; i < NUM_DUCKS; i++) {
     const duck = duckModel.clone();
@@ -656,6 +645,7 @@ function createDucks() {
 }
 
 function duckDynamics() {
+  if (!performanceSettings.enableGPGPU) return;
   const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
   readWaterLevelShader.uniforms['levelTexture'].value = heightmapTexture;
 
@@ -940,7 +930,9 @@ document.addEventListener('pointerdown', (event) => {
     const point = waterIntersects[0].point;
     const localX = point.x - waterMesh.position.x;
     const localZ = point.z - waterMesh.position.z;
-    heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
+    if (performanceSettings.enableGPGPU) {
+      heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
+    }
     return;
   }
 
@@ -996,7 +988,9 @@ document.addEventListener('pointermove', (event) => {
       const point = intersects[0].point;
       const localX = point.x - waterMesh.position.x;
       const localZ = point.z - waterMesh.position.z;
-      heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
+      if (performanceSettings.enableGPGPU) {
+        heightmapVariable.material.uniforms.mousePos.value.set(localX, localZ);
+      }
     }
     return;
   }
@@ -1044,7 +1038,7 @@ const onPointerUp = (event) => {
 
   if (event.pointerId === waterPointerId) {
     waterPointerId = null;
-    if (heightmapVariable) {
+    if (performanceSettings.enableGPGPU && heightmapVariable) {
       heightmapVariable.material.uniforms.mousePos.value.set(10000, 10000);
     }
   }
@@ -1067,17 +1061,19 @@ function animate() {
   requestAnimationFrame(animate);
   const deltaTime = clock.getDelta();
 
-  frame++;
-  if (frame >= 7 - 4) {
-    if (gpuCompute && waterMesh && waterMesh.material.userData.shader) {
-      gpuCompute.compute();
-      const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
-      waterMesh.material.userData.shader.uniforms.heightmap.value = heightmapTexture;
-      if (ducks.length > 0) {
-        duckDynamics();
+  if (performanceSettings.enableGPGPU) {
+    frame++;
+    if (frame >= 7 - 4) {
+      if (gpuCompute && waterMesh && waterMesh.material.userData.shader) {
+        gpuCompute.compute();
+        const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
+        waterMesh.material.userData.shader.uniforms.heightmap.value = heightmapTexture;
+        if (ducks.length > 0) {
+          duckDynamics();
+        }
       }
+      frame = 0;
     }
-    frame = 0;
   }
 
   if (layoutMixer) {
@@ -1094,6 +1090,9 @@ function animate() {
 
   renderer.render(scene, camera);
 }
+
+// 启动加载链
+loadLayout();
 animate();
 
 window.addEventListener('resize', () => {
