@@ -19,9 +19,7 @@ document.head.appendChild(style);
 // =================================================================
 // 移动端优化：自动设备检测与性能配置
 // =================================================================
-// --- 修改：使用更可靠的、基于触摸功能的检测方式 ---
-// 这行新代码检查设备是否支持触摸，对于所有手机和平板电脑（包括iPad和其他Pad）都更准确。
-const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
@@ -205,8 +203,7 @@ function updateLoadingStatus(message) {
 
 // 2. 创建并配置 DRACOLoader
 const dracoLoader = new DRACOLoader();
-// --- 修改：将解码器路径指向一个可靠的公共 CDN ---
-dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+dracoLoader.setDecoderPath('/draco/'); // 确保 draco 文件夹在 public 目录下
 
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
