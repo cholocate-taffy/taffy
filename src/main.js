@@ -6,7 +6,6 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
 // =================================================================
 // 修复移动端触摸问题 (Fix for mobile touch issues)
-// 通过CSS的 'touch-action: none' 来防止浏览器拦截触摸事件
 // =================================================================
 const style = document.createElement('style');
 style.innerHTML = `
@@ -15,6 +14,18 @@ style.innerHTML = `
   }
 `;
 document.head.appendChild(style);
+
+// =================================================================
+// 移动端优化：自动设备检测与性能配置
+// =================================================================
+const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+
+const performanceSettings = {
+  pixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio, 2),
+  gpgpuWidth: isMobile ? 64 : 128,
+  numDucks: isMobile ? 3 : 7,
+  shadows: !isMobile // 手机端默认禁用阴影以提升性能
+};
 
 // =================================================================
 // 初始化基础组件
@@ -29,12 +40,12 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+renderer.setPixelRatio(performanceSettings.pixelRatio);
+renderer.shadowMap.enabled = performanceSettings.shadows;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.8;
 
-const WIDTH = 128;
+const WIDTH = performanceSettings.gpgpuWidth;
 const BOUNDS = 58;
 const BOUNDS_HALF = BOUNDS * 0.5;
 
@@ -48,15 +59,12 @@ const heightmapFragmentShader = `
 	void main()	{
 		vec2 cellSize = 1.0 / resolution.xy;
 		vec2 uv = gl_FragCoord.xy * cellSize;
-		// heightmapValue.x == 上一帧的高度
-		// heightmapValue.y == 上上帧的高度
 		vec4 heightmapValue = texture2D( heightmap, uv );
 		vec4 north = texture2D( heightmap, uv + vec2( 0.0, cellSize.y ) );
 		vec4 south = texture2D( heightmap, uv + vec2( 0.0, - cellSize.y ) );
 		vec4 east = texture2D( heightmap, uv + vec2( cellSize.x, 0.0 ) );
 		vec4 west = texture2D( heightmap, uv + vec2( - cellSize.x, 0.0 ) );
 		float newHeight = ( ( north.x + south.x + east.x + west.x ) * 0.5 - heightmapValue.y ) * viscosity;
-		// 鼠标影响
 		float mousePhase = clamp( length( ( uv - vec2( 0.5 ) ) * BOUNDS - vec2( mousePos.x, -mousePos.y ) ) * PI / mouseSize, 0.0, PI );
 		newHeight -= ( cos( mousePhase ) + 1.0 ) * deep;
 		heightmapValue.y = heightmapValue.x;
@@ -65,12 +73,9 @@ const heightmapFragmentShader = `
 	}
 `;
 
-//读取水位和法线的着色器
 const readWaterLevelFragmentShader = `
 	uniform vec2 point1;
 	uniform sampler2D levelTexture;
-
-	// Integer to float conversion
 	float shift_right( float v, float amt ) {
 		v = floor( v ) + 0.5;
 		return floor( v / exp2( amt ) );
@@ -101,9 +106,7 @@ const readWaterLevelFragmentShader = `
 		float byte1 = ( sign * 128.0 + remaining_bits_of_biased_exponent ) / 255.0;
 		return vec4( byte4, byte3, byte2, byte1 );
 	}
-
 	void main()	{
-		// 【修正】使用 WIDTH (输入纹理的宽度) 来计算正确的采样步长，而不是用 resolution (输出目标的尺寸)
 		float aCellSize = 1.0 / WIDTH;
 		float waterLevel = texture2D( levelTexture, point1 ).x;
 		vec2 normal = vec2(
@@ -126,7 +129,7 @@ const readWaterLevelFragmentShader = `
 let waterMesh, meshRay, gpuCompute, heightmapVariable;
 let duckModel, readWaterLevelShader, readWaterLevelRenderTarget, readWaterLevelImage;
 const ducks = [];
-const NUM_DUCKS = 7;
+const NUM_DUCKS = performanceSettings.numDucks;
 let kirbyModel, animationMixer, kirbyActions = {};
 let activeAction, previousAction;
 const clock = new THREE.Clock();
@@ -162,21 +165,42 @@ const tmpQuatZ = new THREE.Quaternion();
 const yAxis = new THREE.Vector3(0, 1, 0);
 const zAxis = new THREE.Vector3(0, 0, -1);
 
+const loadingManager = new THREE.LoadingManager();
+const gltfLoader = new GLTFLoader(loadingManager);
+const rgbeLoader = new RGBELoader(loadingManager);
+
+const onErrorLoading = (error) => {
+  console.error('An error happened during asset loading:', error);
+  // 可以在此处向用户显示一条友好的错误消息
+  const errorPanel = document.createElement('div');
+  errorPanel.style.position = 'fixed';
+  errorPanel.style.top = '50%';
+  errorPanel.style.left = '50%';
+  errorPanel.style.transform = 'translate(-50%, -50%)';
+  errorPanel.style.color = 'white';
+  errorPanel.style.backgroundColor = 'rgba(0,0,0,0.7)';
+  errorPanel.style.padding = '20px';
+  errorPanel.style.borderRadius = '10px';
+  errorPanel.innerHTML = '资源加载失败<br>请尝试刷新页面或更换网络环境。';
+  document.body.appendChild(errorPanel);
+};
+
+
 // =================================================================
 // 舞台美术：环境、雾气、光照
 // =================================================================
-const rgbeLoader = new RGBELoader();
 rgbeLoader.load('mysky.hdr', (texture) => {
   texture.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = texture;
   scene.environment = texture;
-});
+}, undefined, onErrorLoading);
+
 scene.fog = new THREE.Fog(0x4a708e, 400, 600);
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
 sunLight.position.set(5, 10.65, 7.5);
-sunLight.castShadow = true;
+sunLight.castShadow = performanceSettings.shadows;
 sunLight.shadow.mapSize.set(2048, 2048);
 scene.add(sunLight);
 
@@ -250,7 +274,7 @@ function initWater() {
       '#include <begin_vertex>',
       `
             float heightValue = texture2D( heightmap, uv ).x;
-            vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 ); // 乘以 6.0 来控制波浪高度
+            vec3 transformed = vec3( position.x, position.y, heightValue * 6.0 );
             `
     );
     material.userData.shader = shader;
@@ -259,7 +283,7 @@ function initWater() {
   waterMesh = new THREE.Mesh(geometry, material);
   waterMesh.rotation.x = -Math.PI / 2;
   waterMesh.position.set(57, -19, -144);
-  waterMesh.receiveShadow = true;
+  waterMesh.receiveShadow = performanceSettings.shadows;
   scene.add(waterMesh);
 
   meshRay = new THREE.Mesh(
@@ -313,7 +337,7 @@ const controlParams = {
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
   mouseSensitivity: 0.0023,
-  touchSensitivity: 0.008 // 已将灵敏度调整到更合适的值
+  touchSensitivity: 0.008
 };
 
 const cameraParams = {
@@ -334,18 +358,13 @@ const mouse = new THREE.Vector2();
 
 let joystickPointerId = null;
 let orbitPointerId = null;
-let waterPointerId = null; // 为水面交互添加独立的指针ID
+let waterPointerId = null;
 let joystickStart = new THREE.Vector2();
 let joystickCurrent = new THREE.Vector2();
 
-// 全局指针管理 (用于缩放)
 const activePointers = new Map();
 let isPinching = false;
 let lastPinchDistance = 0;
-
-// =================================================================
-// 卡比移动控制
-// =================================================================
 
 function jump() {
   if (isGrounded) {
@@ -509,19 +528,14 @@ function updateCamera() {
 }
 
 
-// =================================================================
-// 加载模型
-// =================================================================
-const gltfLoader = new GLTFLoader();
-
 gltfLoader.load('布局.glb', (gltf) => {
   layoutModel = gltf.scene;
   layoutModel.position.set(0, 0, 0);
   layoutModel.scale.set(3.5, 3.5, 3.5);
   layoutModel.traverse((child) => {
     if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
+      child.castShadow = performanceSettings.shadows;
+      child.receiveShadow = performanceSettings.shadows;
     }
   });
   scene.add(layoutModel);
@@ -590,7 +604,7 @@ gltfLoader.load('布局.glb', (gltf) => {
   interactiveButtons.push(waterButton);
 
   if (kirbyModel) isReady = true;
-});
+}, undefined, onErrorLoading);
 
 gltfLoader.load('kirby.glb', (gltf) => {
   kirbyModel = gltf.scene;
@@ -598,7 +612,7 @@ gltfLoader.load('kirby.glb', (gltf) => {
   kirbyModel.rotation.y = 4.91;
   kirbyModel.scale.set(2.5, 2.5, 2.5);
   kirbyModel.traverse((child) => {
-    if (child.isMesh) child.castShadow = true;
+    if (child.isMesh) child.castShadow = performanceSettings.shadows;
   });
   scene.add(kirbyModel);
 
@@ -616,18 +630,18 @@ gltfLoader.load('kirby.glb', (gltf) => {
   if (runClip) kirbyActions.run = animationMixer.clipAction(runClip);
 
   if (layoutModel) isReady = true;
-});
+}, undefined, onErrorLoading);
 
 gltfLoader.load('Duck.glb', (gltf) => {
   duckModel = gltf.scene;
   duckModel.scale.set(0.022, 0.022, 0.022);
   duckModel.traverse(child => {
     if (child.isMesh) {
-      child.castShadow = true;
+      child.castShadow = performanceSettings.shadows;
     }
   });
   createDucks();
-});
+}, undefined, onErrorLoading);
 
 function createDucks() {
   for (let i = 0; i < NUM_DUCKS; i++) {
@@ -641,7 +655,6 @@ function createDucks() {
   }
 }
 
-// duckDynamics 函数
 function duckDynamics() {
   const heightmapTexture = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
   readWaterLevelShader.uniforms['levelTexture'].value = heightmapTexture;
@@ -714,10 +727,6 @@ function duckDynamics() {
     }
   }
 }
-
-// =================================================================
-// 记忆星星游戏
-// =================================================================
 
 const gameOverlay = document.getElementById('game-overlay');
 const closeGameButton = document.getElementById('close-game-button');
@@ -865,9 +874,6 @@ stars.forEach(star => {
 
 gameBoard.addEventListener('animationend', () => gameBoard.classList.remove('shake'));
 
-// =================================================================
-// 音乐控制逻辑
-// =================================================================
 const musicControl = document.getElementById('music-control');
 const bgMusic = document.getElementById('bg-music');
 const iconMusicOn = document.getElementById('icon-music-on');
@@ -896,41 +902,32 @@ bgMusic.onpause = () => {
   iconMusicOff.style.display = 'block';
 };
 
-// =================================================================
-// 主交互逻辑 (已重构)
-// =================================================================
 document.addEventListener('pointerdown', (event) => {
-  // 忽略 UI 元素上的点击
   if (event.target.closest('#music-control') || (gameOverlay.classList.contains('visible') && !event.target.closest('#game-content'))) {
     return;
   }
 
-  // 修复：将摇杆逻辑放在最前面，确保它最先被检测
   if (event.target.closest('#joystick')) {
-    // 只接受第一个手指作为摇杆控制
     if (joystickPointerId === null) {
       joystickPointerId = event.pointerId;
       joystickStartTime = Date.now();
       joystickStart.set(event.clientX, event.clientY);
     }
-    return; // 阻止在摇杆上开始视角转动
+    return;
   }
 
-  // 将指针添加到活动列表
   activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
-  // 检查是否开始缩放
   if (activePointers.size === 2) {
     isPinching = true;
-    orbitPointerId = null; // 缩放时停止视角转动
+    orbitPointerId = null;
     const pointers = Array.from(activePointers.values());
     const dx = pointers[0].x - pointers[1].x;
     const dy = pointers[0].y - pointers[1].y;
     lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
-    return; // 开始缩放，不执行后续逻辑
+    return;
   }
 
-  // 处理 3D 场景中的交互 (水面，按钮)
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
@@ -966,35 +963,30 @@ document.addEventListener('pointerdown', (event) => {
         cameraTargetPosition.copy(kirbyModel.position);
       }
     }
-    return; // 阻止在 3D 按钮上开始视角转动
+    return;
   }
 
-  // 如果没有点击任何特定物体，则开始转动视角
   if (orbitPointerId === null && !isPinching) {
     orbitPointerId = event.pointerId;
   }
 });
 
 document.addEventListener('pointermove', (event) => {
-  // 处理摇杆移动
   if (event.pointerId === joystickPointerId) {
     joystickCurrent.set(event.clientX, event.clientY);
     const diff = joystickCurrent.clone().sub(joystickStart);
     const angle = diff.angle();
-    const distance = Math.min(diff.length(), 50); // 摇杆有效半径
+    const distance = Math.min(diff.length(), 50);
     const x = distance * Math.cos(angle);
     const y = distance * Math.sin(angle);
     joystickKnob.style.transform = `translate(${x}px, ${y}px)`;
-
-    // 根据摇杆更新角色移动状态
     keyboardState['w'] = diff.y < -10;
     keyboardState['s'] = diff.y > 10;
     keyboardState['a'] = diff.x < -10;
     keyboardState['d'] = diff.x > 10;
-    return; // 摇杆移动时，不执行其他移动逻辑
+    return;
   }
 
-  // 处理水面交互
   if (event.pointerId === waterPointerId) {
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -1009,28 +1001,22 @@ document.addEventListener('pointermove', (event) => {
     return;
   }
 
-  // 更新活动指针位置
   if (activePointers.has(event.pointerId)) {
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   }
 
-  // 处理缩放
   if (isPinching && activePointers.size === 2) {
     const pointers = Array.from(activePointers.values());
     const dx = pointers[0].x - pointers[1].x;
     const dy = pointers[0].y - pointers[1].y;
     const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
     const deltaDistance = lastPinchDistance - currentPinchDistance;
-
     cameraParams.distance += deltaDistance * 0.25;
     cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
-
     lastPinchDistance = currentPinchDistance;
-    return; // 缩放时不做其他操作
+    return;
   }
 
-
-  // 处理视角转动
   if (event.pointerId === orbitPointerId && !isWaterMode) {
     const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
     targetCameraYaw -= event.movementX * sensitivity;
@@ -1046,7 +1032,6 @@ const onPointerUp = (event) => {
     isPinching = false;
   }
 
-  // 处理摇杆手指抬起
   if (event.pointerId === joystickPointerId) {
     joystickPointerId = null;
     joystickStartTime = 0;
@@ -1057,7 +1042,6 @@ const onPointerUp = (event) => {
     keyboardState['d'] = false;
   }
 
-  // 处理水面交互手指抬起
   if (event.pointerId === waterPointerId) {
     waterPointerId = null;
     if (heightmapVariable) {
@@ -1065,7 +1049,6 @@ const onPointerUp = (event) => {
     }
   }
 
-  // 处理视角转动手指抬起
   if (event.pointerId === orbitPointerId) {
     orbitPointerId = null;
   }
@@ -1084,7 +1067,6 @@ function animate() {
   requestAnimationFrame(animate);
   const deltaTime = clock.getDelta();
 
-  // GPGPU 计算和鸭子动态
   frame++;
   if (frame >= 7 - 4) {
     if (gpuCompute && waterMesh && waterMesh.material.userData.shader) {
