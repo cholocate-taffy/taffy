@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'; // 1. 引入 DRACOLoader
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
@@ -19,21 +19,23 @@ document.head.appendChild(style);
 // =================================================================
 // 移动端优化：自动设备检测与性能配置
 // =================================================================
-const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
 const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
   gpgpuWidth: isMobile ? 32 : 128,
-  numDucks: isMobile ? 1 : 7,
+  // --- 修改：将手机端的小鸭子数量改为 3 ---
+  numDucks: isMobile ? 3 : 7,
   shadows: !isMobile,
-  enableGPGPU: !isMobile
+  // --- 修改：在所有设备上都启用 GPGPU 水面特效 ---
+  enableGPGPU: true
 };
 
 // =================================================================
 // 条件资源路径 (Conditional Asset Paths)
 // =================================================================
 const assetPaths = {
-  layout: isMobile ? '布局_mobile.glb' : '布局.glb',
+  layout: isMobile ? 'layout_mobile.glb' : 'layout.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
   sky: isMobile ? 'mysky.webp' : 'mysky.hdr'
@@ -201,9 +203,8 @@ function updateLoadingStatus(message) {
   loadingIndicator.innerText = message;
 }
 
-// 2. 创建并配置 DRACOLoader
 const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('draco/'); // 确保 draco 文件夹在 public 目录下
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
 
 // --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
@@ -291,7 +292,7 @@ function setupDuck(gltf) {
 if (isMobile) {
   // 手机端：渐进式加载
   const gltfLoaderMobile = new GLTFLoader();
-  gltfLoaderMobile.setDRACOLoader(dracoLoader); // 3. 为手机加载器设置 Draco
+  gltfLoaderMobile.setDRACOLoader(dracoLoader);
   const textureLoaderMobile = new THREE.TextureLoader();
 
   function loadSkyMobile() {
@@ -327,13 +328,13 @@ if (isMobile) {
     }, undefined, onErrorLoading);
   }
 
-  loadLayoutMobile(); // 启动手机端加载链
+  loadLayoutMobile();
 
 } else {
   // 电脑端：并行加载
   const desktopManager = new THREE.LoadingManager();
   const gltfLoaderDesktop = new GLTFLoader(desktopManager);
-  gltfLoaderDesktop.setDRACOLoader(dracoLoader); // 3. 为电脑加载器设置 Draco
+  gltfLoaderDesktop.setDRACOLoader(dracoLoader);
   const rgbeLoaderDesktop = new RGBELoader(desktopManager);
 
   desktopManager.onLoad = () => {
@@ -1152,7 +1153,6 @@ function animate() {
     updateKirbyMovement(deltaTime);
     updateCamera();
   } else {
-    // 即使资源未就绪，也更新相机以允许交互
     updateCamera();
   }
 
