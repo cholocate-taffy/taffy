@@ -19,7 +19,9 @@ document.head.appendChild(style);
 // =================================================================
 // 移动端优化：自动设备检测与性能配置
 // =================================================================
-const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+// --- 修改：使用更可靠的、基于触摸功能的检测方式 ---
+// 这行新代码检查设备是否支持触摸，对于所有手机和平板电脑（包括iPad和其他Pad）都更准确。
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
 const performanceSettings = {
   pixelRatio: isMobile ? 1.5 : Math.min(window.devicePixelRatio, 2),
@@ -1167,4 +1169,3 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
