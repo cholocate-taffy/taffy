@@ -734,7 +734,7 @@ function duckDynamics() {
 
       pos.y = waterMesh.position.y + pixels[0] * 6.0;
 
-      waterNormal.multiplyScalar(0.3);
+      waterNormal.multiplyScalar(0.4);
       sphere.userData.velocity.add(waterNormal);
 
       const drift = new THREE.Vector3(
