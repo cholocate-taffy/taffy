@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GPUComputationRenderer } from 'three/examples/jsm/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
-import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise.js';
+import { SimplexNoise } from './SimplexNoise.js';
 
 // =================================================================
 // 初始化基础组件
