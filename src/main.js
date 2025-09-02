@@ -35,7 +35,7 @@ const assetPaths = {
   layout: isMobile ? '布局_mobile.glb' : '布局.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
-  sky: isMobile ? 'mysky.hdr' : 'mysky.hdr' 
+  sky: isMobile ? 'mysky.jpg' : 'mysky.hdr' 
 };
 
 
