@@ -300,7 +300,7 @@ const controlParams = {
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
   mouseSensitivity: 0.0023,
-  touchSensitivity: 0.009 // 进一步提高触摸灵敏度
+  touchSensitivity: 0.015 // 再次提高触摸灵敏度
 };
 
 const cameraParams = {
@@ -318,9 +318,13 @@ let targetCameraPitch = cameraParams.initialPitch;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-let isMouseDown = false;
+
 let isDraggingOnWater = false;
-let isOrbiting = false;
+let joystickPointerId = null;
+let orbitPointerId = null;
+let joystickStart = new THREE.Vector2();
+let joystickCurrent = new THREE.Vector2();
+
 
 let isPinching = false;
 let lastPinchDistance = 0;
@@ -355,47 +359,13 @@ document.addEventListener('keyup', (event) => {
 const joystick = document.getElementById('joystick');
 const joystickKnob = document.getElementById('joystick-knob');
 const jumpButton = document.getElementById('jump-button');
-let joystickActive = false;
-let joystickStart = new THREE.Vector2();
-let joystickCurrent = new THREE.Vector2();
 
-joystick.addEventListener('touchstart', (event) => {
-  event.preventDefault();
-  joystickActive = true;
-  joystickStartTime = Date.now();
-  joystickStart.set(event.touches[0].clientX, event.touches[0].clientY);
-}, { passive: false });
-
-joystick.addEventListener('touchend', () => {
-  joystickActive = false;
-  joystickStartTime = 0;
-  joystickKnob.style.transform = `translate(0px, 0px)`;
-  keyboardState['w'] = false;
-  keyboardState['s'] = false;
-  keyboardState['a'] = false;
-  keyboardState['d'] = false;
-});
-
-joystick.addEventListener('touchmove', (event) => {
-  event.preventDefault();
-  if (!joystickActive) return;
-  joystickCurrent.set(event.touches[0].clientX, event.touches[0].clientY);
-  const diff = joystickCurrent.clone().sub(joystickStart);
-  const angle = diff.angle();
-  const distance = Math.min(diff.length(), 50);
-  const x = distance * Math.cos(angle);
-  const y = distance * Math.sin(angle);
-  joystickKnob.style.transform = `translate(${x}px, ${y}px)`;
-  keyboardState['w'] = diff.y < -10;
-  keyboardState['s'] = diff.y > 10;
-  keyboardState['a'] = diff.x < -10;
-  keyboardState['d'] = diff.x > 10;
-}, { passive: false });
-
-jumpButton.addEventListener('touchstart', (event) => {
+// 将跳跃按钮事件改为 pointerdown
+jumpButton.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   jump();
 }, { passive: false });
+
 
 function fadeToAction(name, duration) {
   if (!activeAction || !kirbyActions[name]) return;
@@ -455,7 +425,8 @@ function updateKirbyMovement(deltaTime) {
   if (isMoving) {
     if (activeAction !== kirbyActions.run) fadeToAction('run', 0.2);
     let pressDuration = 0;
-    if (joystickActive) {
+    // 检查 joystickPointerId 是否不为 null 来判断摇杆是否激活
+    if (joystickPointerId !== null) {
       pressDuration = Date.now() - joystickStartTime;
     } else {
       const pressTimes = Object.values(keyPressStartTime);
@@ -915,13 +886,26 @@ bgMusic.onpause = () => {
 };
 
 // =================================================================
-// 主交互逻辑
+// 主交互逻辑 (已重构)
 // =================================================================
 document.addEventListener('pointerdown', (event) => {
-  if (event.target.closest('#music-control')) return; // GUI check removed
-  if (gameOverlay.classList.contains('visible') && !event.target.closest('#game-content')) return;
+  // 忽略 UI 元素上的点击
+  if (event.target.closest('#music-control') || gameOverlay.classList.contains('visible') && !event.target.closest('#game-content')) {
+    return;
+  }
 
-  isMouseDown = true;
+  // 处理摇杆
+  if (event.target.closest('#joystick')) {
+    // 只接受第一个手指作为摇杆控制
+    if (joystickPointerId === null) {
+      joystickPointerId = event.pointerId;
+      joystickStartTime = Date.now();
+      joystickStart.set(event.clientX, event.clientY);
+    }
+    return; // 阻止在摇杆上开始视角转动
+  }
+
+  // 处理 3D 场景中的交互 (水面，按钮)
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
@@ -955,33 +939,44 @@ document.addEventListener('pointerdown', (event) => {
         cameraTargetPosition.copy(kirbyModel.position);
       }
     }
-  } else {
-    if (!isPinching) {
-      isOrbiting = true;
-    }
+    return; // 阻止在 3D 按钮上开始视角转动
   }
-});
 
-document.addEventListener('pointerup', () => {
-  isMouseDown = false;
-  isDraggingOnWater = false;
-  isOrbiting = false;
-  if (heightmapVariable) {
-    heightmapVariable.material.uniforms.mousePos.value.set(10000, 10000);
+  // 如果没有点击任何特定物体，则开始转动视角
+  if (orbitPointerId === null && !isPinching) {
+    orbitPointerId = event.pointerId;
   }
 });
 
 document.addEventListener('pointermove', (event) => {
-  if (isOrbiting && !isWaterMode) {
-    // 判断输入类型并选择相应的灵敏度
-    const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
+  // 处理摇杆移动
+  if (event.pointerId === joystickPointerId) {
+    joystickCurrent.set(event.clientX, event.clientY);
+    const diff = joystickCurrent.clone().sub(joystickStart);
+    const angle = diff.angle();
+    const distance = Math.min(diff.length(), 50); // 摇杆有效半径
+    const x = distance * Math.cos(angle);
+    const y = distance * Math.sin(angle);
+    joystickKnob.style.transform = `translate(${x}px, ${y}px)`;
 
+    // 根据摇杆更新角色移动状态
+    keyboardState['w'] = diff.y < -10;
+    keyboardState['s'] = diff.y > 10;
+    keyboardState['a'] = diff.x < -10;
+    keyboardState['d'] = diff.x > 10;
+    return; // 摇杆移动时，不执行其他移动逻辑
+  }
+
+  // 处理视角转动
+  if (event.pointerId === orbitPointerId && !isWaterMode) {
+    const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
     targetCameraYaw -= event.movementX * sensitivity;
     targetCameraPitch -= event.movementY * sensitivity;
     targetCameraPitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, targetCameraPitch));
   }
 
-  if (isMouseDown && isDraggingOnWater) {
+  // 处理水面拖拽效果
+  if (isDraggingOnWater) {
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
@@ -995,6 +990,34 @@ document.addEventListener('pointermove', (event) => {
   }
 });
 
+const onPointerUp = (event) => {
+  // 处理摇杆手指抬起
+  if (event.pointerId === joystickPointerId) {
+    joystickPointerId = null;
+    joystickStartTime = 0;
+    joystickKnob.style.transform = 'translate(0px, 0px)';
+    keyboardState['w'] = false;
+    keyboardState['s'] = false;
+    keyboardState['a'] = false;
+    keyboardState['d'] = false;
+  }
+
+  // 处理视角转动手指抬起
+  if (event.pointerId === orbitPointerId) {
+    orbitPointerId = null;
+  }
+
+  // 重置水面拖拽状态
+  isDraggingOnWater = false;
+  if (heightmapVariable) {
+    heightmapVariable.material.uniforms.mousePos.value.set(10000, 10000);
+  }
+};
+
+document.addEventListener('pointerup', onPointerUp);
+document.addEventListener('pointercancel', onPointerUp);
+
+
 document.addEventListener('wheel', (event) => {
   cameraParams.distance += event.deltaY * 0.05;
   cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
@@ -1003,7 +1026,7 @@ document.addEventListener('wheel', (event) => {
 document.addEventListener('touchstart', (event) => {
   if (event.touches.length === 2) {
     isPinching = true;
-    isOrbiting = false;
+    orbitPointerId = null; // 缩放时禁止转动
     const dx = event.touches[0].clientX - event.touches[1].clientX;
     const dy = event.touches[0].clientY - event.touches[1].clientY;
     lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
