@@ -3,6 +3,19 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
+
+// =================================================================
+// 修复移动端触摸问题 (Fix for mobile touch issues)
+// 通过CSS的 'touch-action: none' 来防止浏览器拦截触摸事件
+// =================================================================
+const style = document.createElement('style');
+style.innerHTML = `
+  #webgl-canvas, #joystick, #jump-button {
+    touch-action: none;
+  }
+`;
+document.head.appendChild(style);
+
 // =================================================================
 // 初始化基础组件
 // =================================================================
@@ -892,6 +905,17 @@ document.addEventListener('pointerdown', (event) => {
     return;
   }
 
+  // 修复：将摇杆逻辑放在最前面，确保它最先被检测
+  if (event.target.closest('#joystick')) {
+    // 只接受第一个手指作为摇杆控制
+    if (joystickPointerId === null) {
+      joystickPointerId = event.pointerId;
+      joystickStartTime = Date.now();
+      joystickStart.set(event.clientX, event.clientY);
+    }
+    return; // 阻止在摇杆上开始视角转动
+  }
+
   // 将指针添加到活动列表
   activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -903,18 +927,7 @@ document.addEventListener('pointerdown', (event) => {
     const dx = pointers[0].x - pointers[1].x;
     const dy = pointers[0].y - pointers[1].y;
     lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
-  }
-
-
-  // 处理摇杆
-  if (event.target.closest('#joystick')) {
-    // 只接受第一个手指作为摇杆控制
-    if (joystickPointerId === null) {
-      joystickPointerId = event.pointerId;
-      joystickStartTime = Date.now();
-      joystickStart.set(event.clientX, event.clientY);
-    }
-    return; // 阻止在摇杆上开始视角转动
+    return; // 开始缩放，不执行后续逻辑
   }
 
   // 处理 3D 场景中的交互 (水面，按钮)
