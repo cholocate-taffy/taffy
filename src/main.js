@@ -300,7 +300,7 @@ const controlParams = {
   jumpStrength: 15,
   rotationLerpFactor: 0.1,
   mouseSensitivity: 0.0023,
-  touchSensitivity: 0.006 // 为触摸滑动增加的新参数
+  touchSensitivity: 0.009 // 进一步提高触摸灵敏度
 };
 
 const cameraParams = {
@@ -1070,3 +1070,4 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
