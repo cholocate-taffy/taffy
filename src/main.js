@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-//移除了RGBELoader，因为它不再需要
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // 重新引入 RGBELoader 供电脑端使用
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
 // =================================================================
@@ -22,21 +22,20 @@ const isMobile = /Mobi|Android/i.test(navigator.userAgent);
 
 const performanceSettings = {
   pixelRatio: isMobile ? 1 : Math.min(window.devicePixelRatio, 2),
-  gpgpuWidth: isMobile ? 32 : 128, // 在手机上进一步降低GPGPU分辨率
-  numDucks: isMobile ? 1 : 7, // 在手机上进一步减少鸭子数量
-  shadows: false, // 对所有设备禁用阴影以获得最大性能
-  enableGPGPU: !isMobile // 仅在非手机设备上开启水面模拟
+  gpgpuWidth: isMobile ? 32 : 128,
+  numDucks: isMobile ? 1 : 7,
+  shadows: false,
+  enableGPGPU: !isMobile
 };
 
 // =================================================================
 // 条件资源路径 (Conditional Asset Paths)
-// 根据设备类型选择加载不同版本的资源
 // =================================================================
 const assetPaths = {
   layout: isMobile ? '布局_mobile.glb' : '布局.glb',
   kirby: isMobile ? 'kirby_mobile.glb' : 'kirby.glb',
   duck: isMobile ? 'Duck_mobile.glb' : 'Duck.glb',
-  sky: 'mysky_optimized.jpg' // 天空贴图已优化，共用一个即可
+  sky: isMobile ? 'mysky_optimized.jpg' : 'mysky.hdr' // 电脑端恢复使用 .hdr
 };
 
 
@@ -201,7 +200,7 @@ function updateLoadingStatus(message) {
   loadingIndicator.innerText = message;
 }
 
-// --- 资源设置函数 ---
+// --- 资源设置函数 (Setup Functions) ---
 function setupSky(texture) {
   texture.mapping = THREE.EquirectangularReflectionMapping;
   scene.background = texture;
@@ -283,7 +282,7 @@ function setupDuck(gltf) {
 }
 
 
-// --- 条件加载逻辑 ---
+// --- 条件加载逻辑 (Conditional Loading Logic) ---
 if (isMobile) {
   // 手机端：渐进式加载
   const gltfLoaderMobile = new GLTFLoader();
@@ -328,7 +327,7 @@ if (isMobile) {
   // 电脑端：并行加载
   const desktopManager = new THREE.LoadingManager();
   const gltfLoaderDesktop = new GLTFLoader(desktopManager);
-  const textureLoaderDesktop = new THREE.TextureLoader(desktopManager);
+  const rgbeLoaderDesktop = new RGBELoader(desktopManager); // 电脑端使用 RGBELoader
 
   desktopManager.onLoad = () => {
     loadingIndicator.style.display = 'none';
@@ -341,7 +340,7 @@ if (isMobile) {
 
   updateLoadingStatus('正在加载...');
 
-  textureLoaderDesktop.load(assetPaths.sky, setupSky, undefined, onErrorLoading);
+  rgbeLoaderDesktop.load(assetPaths.sky, setupSky, undefined, onErrorLoading);
   gltfLoaderDesktop.load(assetPaths.layout, setupLayout, undefined, onErrorLoading);
   gltfLoaderDesktop.load(assetPaths.kirby, setupKirby, undefined, onErrorLoading);
   gltfLoaderDesktop.load(assetPaths.duck, setupDuck, undefined, onErrorLoading);
@@ -575,7 +574,7 @@ function fadeToAction(name, duration) {
 }
 
 function updateKirbyMovement(deltaTime) {
-  if (!kirbyModel || !animationMixer || !layoutModel) return;
+  if (!isReady || !kirbyModel || !animationMixer || !layoutModel) return;
 
   const speed = controlParams.speed * deltaTime;
 
@@ -661,7 +660,7 @@ function updateKirbyMovement(deltaTime) {
 }
 
 function updateCamera() {
-  if (!kirbyModel) return;
+  if (!isReady || !kirbyModel) return;
 
   if (isWaterMode) {
     camera.position.lerp(WATER_CAMERA_POSITION, 0.05);
@@ -1146,8 +1145,8 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// 启动加载链
-loadLayout();
+// 移除错误的启动调用
+// loadLayout(); 
 animate();
 
 window.addEventListener('resize', () => {
