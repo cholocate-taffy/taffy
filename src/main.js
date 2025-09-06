@@ -1064,7 +1064,7 @@ document.addEventListener('pointermove', (event) => {
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   }
 
-  if (isPinching && activePointers.size === 2) {
+  if (isReady && isPinching && activePointers.size === 2) { // MODIFIED: Added isReady check for pinch zoom
     const pointers = Array.from(activePointers.values());
     const dx = pointers[0].x - pointers[1].x;
     const dy = pointers[0].y - pointers[1].y;
@@ -1076,7 +1076,7 @@ document.addEventListener('pointermove', (event) => {
     return;
   }
 
-  if (event.pointerId === orbitPointerId && !isWaterMode) {
+  if (isReady && event.pointerId === orbitPointerId && !isWaterMode) { // MODIFIED: Added isReady check
     const sensitivity = event.pointerType === 'touch' ? controlParams.touchSensitivity : controlParams.mouseSensitivity;
     targetCameraYaw -= event.movementX * sensitivity;
     targetCameraPitch -= event.movementY * sensitivity;
@@ -1118,6 +1118,7 @@ document.addEventListener('pointercancel', onPointerUp);
 
 
 document.addEventListener('wheel', (event) => {
+  if (!isReady) return; // MODIFIED: Added isReady check
   cameraParams.distance += event.deltaY * 0.05;
   cameraParams.distance = Math.max(15, Math.min(80, cameraParams.distance));
 });
@@ -1145,17 +1146,14 @@ function animate() {
     layoutMixer.update(deltaTime);
   }
 
+  // MODIFIED: Removed the 'else' block to prevent camera updates before ready
   if (isReady) {
     if (kirbyModel && !isWaterMode) {
       cameraTargetPosition.lerp(kirbyModel.position, 0.08);
     }
     updateKirbyMovement(deltaTime);
     updateCamera();
-  } else {
-    // 即使资源未就绪，也更新相机以允许交互
-    updateCamera();
   }
-
 
   renderer.render(scene, camera);
 }
@@ -1167,4 +1165,3 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
